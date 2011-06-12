@@ -8,6 +8,9 @@ You should have received a copy of the GNU General Public License along with Gar
 Contact Vanilla Forums Inc. at support [at] vanillaforums [dot] com
 */
 
+include PATH_LIBRARY.'/vendors/wordpress/functions.wordpress.php';
+
+/*
 function Gdn_Autoload($ClassName) {
    if (!class_exists('Gdn_FileSystem', FALSE))
       return false;
@@ -28,13 +31,22 @@ function Gdn_Autoload($ClassName) {
    else
       $ApplicationWhiteList = NULL;
    
+   // If we're turning on an application, temporarily allow it in the autoloader
+   $TemporaryAppFolders = C('TemporaryApplications', FALSE);
+   if ($TemporaryAppFolders !== FALSE && is_array($TemporaryAppFolders) && sizeof($TemporaryAppFolders))
+      $ApplicationWhiteList = array_flip(array_flip(array_merge($ApplicationWhiteList, $TemporaryAppFolders)));
+      
    $LibraryPath = FALSE;
 
    if (Gdn::PluginManager() instanceof Gdn_PluginManager) {
       // Look for plugin files.
       if ($LibraryPath === FALSE) {
-         $PluginFolders = Gdn::PluginManager()->EnabledPluginFolders();
-         $LibraryPath = Gdn_FileSystem::FindByMapping('library', PATH_PLUGINS, $PluginFolders, $LibraryFileName);
+         foreach (Gdn::PluginManager()->SearchPaths() as $SearchPath => $Trash) {
+            // If we have already loaded the plugin manager, use its internal folder list, otherwise scan all subfolders during search
+            $PluginFolders = (Gdn::PluginManager()->Started()) ? Gdn::PluginManager()->EnabledPluginFolders($SearchPath) : TRUE;
+            
+            $LibraryPath = Gdn_FileSystem::FindByMapping('library', $SearchPath, $PluginFolders, $LibraryFileName);
+         }
       }
 
       // Look harder for plugin files.
@@ -45,11 +57,11 @@ function Gdn_Autoload($ClassName) {
 
    // If this is a model, look in the models folder(s)
    if (!$LibraryPath && strtolower(substr($ClassName, -5)) == 'model')
-      $LibraryPath = Gdn_FileSystem::FindByMapping('library', PATH_APPLICATIONS, $ApplicationWhiteList, 'models' . DS . $LibraryFileName);
+      $LibraryPath = Gdn_FileSystem::FindByMapping('library', PATH_APPLICATIONS, $ApplicationWhiteList, "models/{$LibraryFileName}");
 
    // Look for the class in the applications' library folders.
    if ($LibraryPath === FALSE) {
-      $LibraryPath = Gdn_FileSystem::FindByMapping('library', PATH_APPLICATIONS, $ApplicationWhiteList, "library/$LibraryFileName");
+      $LibraryPath = Gdn_FileSystem::FindByMapping('library', PATH_APPLICATIONS, $ApplicationWhiteList, "library/{$LibraryFileName}");
    }
 
    // Look for the class in the core.
@@ -60,14 +72,14 @@ function Gdn_Autoload($ClassName) {
          array(
             'core',
             'database',
-            'vendors'. DS . 'phpmailer'
+            'vendors/phpmailer'
          ),
          $LibraryFileName
       );
 
    // If it still hasn't been found, check for modules
    if ($LibraryPath === FALSE)
-      $LibraryPath = Gdn_FileSystem::FindByMapping('library', PATH_APPLICATIONS, $ApplicationWhiteList, 'modules' . DS . $LibraryFileName);
+      $LibraryPath = Gdn_FileSystem::FindByMapping('library', PATH_APPLICATIONS, $ApplicationWhiteList, "modules/{$LibraryFileName}");
 
    if ($LibraryPath !== FALSE)
       include_once($LibraryPath);
@@ -81,6 +93,7 @@ if (!function_exists('__autoload')) {
 }
 
 spl_autoload_register('Gdn_Autoload', FALSE);
+*/
 
 
 if (!function_exists('AddActivity')) {
@@ -177,6 +190,19 @@ if (!function_exists('ArrayInArray')) {
          }
       }
       return $Return;
+   }
+}
+
+if (!function_exists('ArraySearchI')) {
+   /**
+    * Case-insensitive version of array_search.
+    *
+    * @param array $Value The value to find in array.
+    * @param array $Search The array to search in for $Value.
+    * @return mixed Key of $Value in the $Search array.
+    */
+   function ArraySearchI($Value, $Search) {
+      return array_search(strtolower($Value), array_map('strtolower', $Search)); 
    }
 }
 
@@ -287,15 +313,14 @@ if (!function_exists('Asset')) {
 
             switch ($Type) {
                case 'plugins':
-                  $PluginInfo = Gdn::PluginManager()->AvailablePlugins($Key);
+                  $PluginInfo = Gdn::PluginManager()->GetPluginInfo($Key);
                   $Version = GetValue('Version', $PluginInfo, $Version);
                   break;
                case 'themes':
                   if ($ThemeVersion === NULL) {
-                     if (file_exists(PATH_ROOT.'/themes/'.Theme().'/about.php')) {
-                        $ThemeInfo = array();
-                        include PATH_ROOT.'/themes/'.Theme().'/about.php';
-                        $ThemeVersion = GetValueR(Theme().'.Version', $ThemeInfo, $Version);
+                     $ThemeInfo = Gdn::ThemeManager()->GetThemeInfo(Theme());
+                     if ($ThemeInfo !== FALSE) {
+                        $ThemeVersion = GetValue('Version', $ThemeInfo, $Version);
                      } else {
                         $ThemeVersion = $Version;
                      }
@@ -316,12 +341,18 @@ if (!function_exists('Attribute')) {
     * Takes an attribute (or array of attributes) and formats them in
     * attribute="value" format.
     */
-   function Attribute($Name, $Value = '') {
+   function Attribute($Name, $ValueOrExclude = '') {
       $Return = '';
       if (!is_array($Name)) {
-         $Name = array($Name => $Value);
+         $Name = array($Name => $ValueOrExclude);
+         $Exclude = '';
+      } else {
+         $Exclude = $ValueOrExclude;
       }
       foreach ($Name as $Attribute => $Val) {
+         if ($Exclude && StringBeginsWith($Attribute, $Exclude))
+            continue;
+         
          if ($Val != '' && $Attribute != 'Standard') {
             $Return .= ' '.$Attribute.'="'.htmlspecialchars($Val, ENT_COMPAT, 'UTF-8').'"';
          }
@@ -528,7 +559,8 @@ if (!function_exists('ConsolidateArrayValuesByKey')) {
    function ConsolidateArrayValuesByKey($Array, $Key, $ValueKey = '', $DefaultValue = NULL) {
       $Return = array();
       foreach ($Array as $Index => $AssociativeArray) {
-			if(is_object($AssociativeArray)) {
+         
+			if (is_object($AssociativeArray)) {
 				if($ValueKey === '') {
 					$Return[] = $AssociativeArray->$Key;
 				} elseif(property_exists($AssociativeArray, $ValueKey)) {
@@ -536,7 +568,7 @@ if (!function_exists('ConsolidateArrayValuesByKey')) {
 				} else {
 					$Return[$AssociativeArray->$Key] = $DefaultValue;
 				}
-			} elseif (array_key_exists($Key, $AssociativeArray)) {
+			} elseif (is_array($AssociativeArray) && array_key_exists($Key, $AssociativeArray)) {
             if($ValueKey === '') {
                $Return[] = $AssociativeArray[$Key];
             } elseif (array_key_exists($ValueKey, $AssociativeArray)) {
@@ -589,6 +621,36 @@ if (!function_exists('filter_input')) {
    }
 }
 
+if (!function_exists('Debug')) {
+   function Debug($Value = NULL) {
+      static $Debug = FALSE;
+      if ($Value === NULL)
+         return $Debug;
+      
+      $Debug = $Value;
+      if ($Debug)
+         error_reporting(E_ALL);
+      else
+         error_reporting(E_ERROR | E_PARSE | E_CORE_ERROR | E_COMPILE_ERROR | E_USER_ERROR | E_RECOVERABLE_ERROR);
+   }
+}
+
+if (!function_exists('Deprecated')) {
+   /**
+    * Mark a function deprecated.
+    *
+    * @param string $Name The name of the deprecated function.
+    * @param string $NewName The name of the new function that should be used instead.
+    */
+   function Deprecated($Name, $NewName = FALSE) {
+      $Msg = $Name.' is deprecated.';
+      if ($NewName)
+         $Msg .= " Use $NewName instead.";
+
+      trigger_error($Msg, E_USER_DEPRECATED);
+   }
+}
+
 if (!function_exists('ExternalUrl')) {
    function ExternalUrl($Path) {
       $Format = C('Garden.ExternalUrlFormat');
@@ -600,6 +662,127 @@ if (!function_exists('ExternalUrl')) {
 
       return $Result;
    }
+}
+
+/**
+ * Formats a string by inserting data from its arguments, similar to sprintf, but with a richer syntax.
+ *
+ * @param string $String The string to format with fields from its args enclosed in curly braces. The format of fields is in the form {Field,Format,Arg1,Arg2}. The following formats are the following:
+ *  - date: Formats the value as a date. Valid arguments are short, medium, long.
+ *  - number: Formats the value as a number. Valid arguments are currency, integer, percent.
+ *  - time: Formats the valud as a time. This format has no additional arguments.
+ *  - url: Calls Url() function around the value to show a valid url with the site. You can pass a domain to include the domain.
+ *  - urlencode, rawurlencode: Calls urlencode/rawurlencode respectively.
+ *  - html: Calls htmlspecialchars.
+ * @param array $Args The array of arguments. If you want to nest arrays then the keys to the nested values can be seperated by dots.
+ * @return string The formatted string.
+ * <code>
+ * echo FormatString("Hello {Name}, It's {Now,time}.", array('Name' => 'Frank', 'Now' => '1999-12-31 23:59'));
+ * // This would output the following string:
+ * // Hello Frank, It's 12:59PM.
+ * </code>
+ */
+function FormatString($String, $Args = array()) {
+   _FormatStringCallback($Args, TRUE);
+   $Result = preg_replace_callback('/{([^}]+?)}/', '_FormatStringCallback', $String);
+
+   return $Result;
+}
+
+function _FormatStringCallback($Match, $SetArgs = FALSE) {
+   static $Args = array();
+   if ($SetArgs) {
+      $Args = $Match;
+      return;
+   }
+
+   $Match = $Match[1];
+   if ($Match == '{')
+      return $Match;
+
+   // Parse out the field and format.
+   $Parts = explode(',', $Match);
+   $Field = trim($Parts[0]);
+   $Format = strtolower(trim(GetValue(1, $Parts, '')));
+   $SubFormat = strtolower(trim(GetValue(2, $Parts, '')));
+   $FomatArgs = GetValue(3, $Parts, '');
+
+   if (in_array($Format, array('currency', 'integer', 'percent'))) {
+      $FormatArgs = $SubFormat;
+      $SubFormat = $Format;
+      $Format = 'number';
+   } elseif(is_numeric($SubFormat)) {
+      $FormatArgs = $SubFormat;
+      $SubFormat = '';
+   }
+
+   $Value = GetValueR($Field, $Args, '');
+   if ($Value == '' && $Format != 'url') {
+      $Result = '';
+   } else {
+      switch(strtolower($Format)) {
+         case 'date':
+            switch($SubFormat) {
+               case 'short':
+                  $Result = Gdn_Format::Date($Value, '%d/%m/%Y');
+                  break;
+               case 'medium':
+                  $Result = Gdn_Format::Date($Value, '%e %b %Y');
+                  break;
+               case 'long':
+                  $Result = Gdn_Format::Date($Value, '%e %B %Y');
+                  break;
+               default:
+                  $Result = Gdn_Format::Date($Value);
+                  break;
+            }
+            break;
+         case 'html':
+         case 'htmlspecialchars':
+            $Result = htmlspecialchars($Value);
+            break;
+         case 'number':
+            if(!is_numeric($Value)) {
+               $Result = $Value;
+            } else {
+               switch($SubFormat) {
+                  case 'currency':
+                     $Result = '$'.number_format($Value, is_numeric($FormatArgs) ? $FormatArgs : 2);
+                  case 'integer':
+                     $Result = (string)round($Value);
+                     if(is_numeric($FormatArgs) && strlen($Result) < $FormatArgs) {
+                           $Result = str_repeat('0', $FormatArgs - strlen($Result)).$Result;
+                     }
+                     break;
+                  case 'percent':
+                     $Result = round($Value * 100, is_numeric($FormatArgs) ? $FormatArgs : 0);
+                     break;
+                  default:
+                     $Result = number_format($Value, is_numeric($FormatArgs) ? $FormatArgs : 0);
+                     break;
+               }
+            }
+            break;
+         case 'rawurlencode':
+            $Result = rawurlencode($Value);
+            break;
+         case 'time':
+            $Result = Gdn_Format::Date($Value, '%l:%M%p');
+            break;
+         case 'url':
+            if (strpos($Field, '/') !== FALSE)
+               $Value = $Field;
+            $Result = Url($Value, $SubFormat == 'domain');
+            break;
+         case 'urlencode':
+            $Result = urlencode($Value);
+            break;
+         default:
+            $Result = $Value;
+            break;
+      }
+   }
+   return $Result;
 }
 
 if (!function_exists('ForceBool')) {
@@ -712,7 +895,7 @@ if (!function_exists('GetMentions')) {
       
       // This one grabs mentions that start at the beginning of $String
       preg_match_all(
-         '/(?:^|[\s,\.])@(\w{3,20})\b/i',
+         '/(?:^|[\s,\.>])@(\w{3,20})\b/i',
          $String,
          $Matches
       );
@@ -786,7 +969,7 @@ if (!function_exists('GetValueR')) {
 	 * @param mixed $Default The value to return if the key does not exist.
 	 * @return mixed The value from the array or object.
 	 */
-   function GetValueR($Key, &$Collection, $Default = FALSE) {
+   function GetValueR($Key, $Collection, $Default = FALSE) {
       $Path = explode('.', $Key);
 
       $Value = $Collection;
@@ -841,6 +1024,19 @@ if (!function_exists('InArrayI')) {
    }
 }
 
+if (!function_exists('InSubArray')) {
+   /**
+    * Loop through $Haystack looking for subarrays that contain $Needle.
+    */
+   function InSubArray($Needle, $Haystack) {
+      foreach ($Haystack as $Key => $Val) {
+         if (is_array($Val) && in_array($Needle, $Val))
+            return TRUE;
+      }
+      return FALSE;
+   }
+}
+
 if (!function_exists('IsMobile')) {
    function IsMobile() {
       $Mobile = 0;
@@ -858,7 +1054,7 @@ if (!function_exists('IsMobile')) {
          )
          $Mobile++;
       
-      if(strpos($UserAgent,'android') > 0)
+      if(strpos($UserAgent,'android') > 0 && strpos($UserAgent,'mobile') > 0)
          $Mobile++;
  
       $MobileUserAgent = substr($UserAgent, 0, 4);
@@ -1014,6 +1210,11 @@ if (!function_exists('OffsetLimit')) {
          $Limit = $Matches[2];
          if (!is_numeric($Limit))
             $Limit = $LimitOrPageSize;
+      } elseif (preg_match('/(\d+)lin(\d*)/i', $OffsetOrPage, $Matches)) {
+         $Offset = $Matches[1] - 1;
+         $Limit = $Matches[2];
+         if (!is_numeric($Limit))
+            $Limit = $LimitOrPageSize;
       } else {
          $Offset = 0;
          $Limit = $LimitOrPageSize;
@@ -1049,10 +1250,10 @@ if (!function_exists('parse_ini_string')) {
     * PHP 5.2.0.
     */
    function parse_ini_string ($Ini) {
-      $Lines = split("\n", $Ini);
+      $Lines = explode("\n", $Ini);
       $Result = array();
       foreach($Lines as $Line) {
-         $Parts = split('=', $Line, 2);
+         $Parts = explode('=', $Line, 2);
          if(count($Parts) == 1) {
             $Result[trim($Parts[0])] = '';
          } elseif(count($Parts) >= 2) {
@@ -1232,10 +1433,13 @@ if (!function_exists('ProxyRequest')) {
     * response.
     *
     * @param string $Url The full url to the page being requested (including http://)
+    * @param integer $Timeout How long to allow for this request. Default Garden.SocketTimeout or 1, 0 to never timeout
+    * @param boolean $FollowRedirects Whether or not to follow 301 and 302 redirects. Defaults false.
+    * @return string Response (no headers)
     */
    function ProxyRequest($Url, $Timeout = FALSE, $FollowRedirects = FALSE) {
       $OriginalTimeout = $Timeout;
-		if(!$Timeout)
+		if ($Timeout === FALSE)
 			$Timeout = C('Garden.SocketTimeout', 1.0);
 
       $UrlParts = parse_url($Url);
@@ -1271,6 +1475,9 @@ if (!function_exists('ProxyRequest')) {
          if ($Cookie != '')
             curl_setopt($Handler, CURLOPT_COOKIE, $Cookie);
          
+         if ($Timeout > 0)
+            curl_setopt($Handler, CURLOPT_TIMEOUT, $Timeout);
+         
          // TIM @ 2010-06-28: Commented this out because it was forcing all requests with parameters to be POST. Same for the $Url above
          // 
          //if ($Query != '') {
@@ -1290,11 +1497,12 @@ if (!function_exists('ProxyRequest')) {
          $Referer = Gdn_Url::WebRoot(TRUE);
       
          // Make the request
-         $Pointer = @fsockopen($Host, $Port, $ErrorNumber, $Error);
+         $Pointer = @fsockopen($Host, $Port, $ErrorNumber, $Error, $Timeout);
          if (!$Pointer)
             throw new Exception(sprintf(T('Encountered an error while making a request to the remote server (%1$s): [%2$s] %3$s'), $Url, $ErrorNumber, $Error));
    
-         if(strlen($Cookie) > 0)
+         stream_set_timeout($Pointer, $Timeout);
+         if (strlen($Cookie) > 0)
             $Cookie = "Cookie: $Cookie\r\n";
          
          $HostHeader = $Host.(($Port != 80) ? ":{$Port}" : '');
@@ -1319,8 +1527,15 @@ if (!function_exists('ProxyRequest')) {
             $Response .= $Line;
          }
          @fclose($Pointer);
-         $Response = trim(substr($Response, strpos($Response, "\r\n\r\n") + 4));
+         $Bytes = strlen($Response);
+         $Response = trim($Response);
          $Success = TRUE;
+         
+         $StreamInfo = stream_get_meta_data($Pointer);
+         if (GetValue('timed_out', $StreamInfo, FALSE) === TRUE) {
+            $Success = FALSE;
+            $Response = "Operation timed out after {$Timeout} seconds with {$Bytes} bytes received.";
+         }
       } else {
          throw new Exception(T('Encountered an error while making a request to the remote server: Your PHP configuration does not allow curl or fsock requests.'));
       }
@@ -1394,6 +1609,55 @@ if (!function_exists('Redirect')) {
       header("location: ".Url($Destination), TRUE, $SendCode);
       // Exit
       exit();
+   }
+}
+
+if (!function_exists('ReflectArgs')) {
+   /**
+    * Reflect the arguments on a callback and returns them as an associative array.
+    * @param callback $Callback A callback to the function.
+    * @param array $Args1 An array of arguments.
+    * @param array $Args2 An optional other array of arguments.
+    * @return array The arguments in an associative array, in order ready to be passed to call_user_func_array().
+    */
+   function ReflectArgs($Callback, $Args1, $Args2 = NULL) {
+      $Result = array();
+
+      if (!method_exists($Controller, $Method))
+         return;
+      
+      if ($Args2 !== NULL)
+         $Args1 = array_merge($Args2, $Args1);
+      $Args1 = array_change_key_case($Args1);
+
+      if (is_string($Callback))
+         $Meth = new ReflectionFunction($Callback);
+      else
+         $Meth = new ReflectionMethod($Callback[0], $Callback[1]);
+      
+      $MethArgs = $Meth->getParameters();
+      
+      $Args = array();
+      $MissingArgs = array();
+
+      // Set all of the parameters.
+      foreach ($MethArgs as $Index => $MethParam) {
+         $ParamName = $MethParam->getName();
+         $ParamNameL = strtolower($ParamName);
+
+         if (isset($Args1[$ParamNameL]))
+            $Args[$ParamName] = $Args1[$ParamNameL];
+         elseif (isset($Args1[$Index]))
+            $Args[$ParamName] = $Args1[$Index];
+         elseif ($MethParam->isDefaultValueAvailable())
+            $Args[$ParamName] = $MethParam->getDefaultValue();
+         else {
+            $Args[$ParamName] = NULL;
+            $MissingArgs[] = "{$Index}: {$ParamName}";
+         }
+      }
+
+      return $Args;
    }
 }
 
@@ -1472,6 +1736,17 @@ if (!function_exists('RemoveQuoteSlashes')) {
  	function RemoveQuoteSlashes($String) {
 		return str_replace("\\\"", '"', $String);
 	}
+}
+
+if (!function_exists('RemoveValueFromArray')) {
+   function RemoveValueFromArray(&$Array, $Value) {
+      foreach ($Array as $key => $val) {
+         if ($val == $Value) {
+            unset($Array[$key]);
+            break;
+         }
+      }
+   }
 }
 
 if (!function_exists('SafeGlob')) {
@@ -1578,21 +1853,80 @@ if (!function_exists('SliceString')) {
    }
 }
 
+if (!function_exists('SmartAsset')) {
+   /**
+    * Takes the path to an asset (image, js file, css file, etc) and prepends the webroot.
+    */
+   function SmartAsset($Destination = '', $WithDomain = FALSE, $AddVersion = FALSE) {
+      $Destination = str_replace('\\', '/', $Destination);
+      if (substr($Destination, 0, 7) == 'http://' || substr($Destination, 0, 8) == 'https://') {
+         $Result = $Destination;
+      } else {
+         $Parts = array(Gdn_Url::WebRoot($WithDomain), $Destination);
+         if (!$WithDomain)
+            array_unshift($Parts, '/');
+            
+         $Result = CombinePaths($Parts, '/');
+      }
+
+      if ($AddVersion) {
+         if (strpos($Result, '?') === FALSE)
+            $Result .= '?';
+         else
+            $Result .= '&';
+
+         // Figure out which version to put after the asset.
+         $Version = APPLICATION_VERSION;
+         if (preg_match('`^/([^/]+)/([^/]+)/`', $Destination, $Matches)) {
+            $Type = $Matches[1];
+            $Key = $Matches[2];
+            static $ThemeVersion = NULL;
+
+            switch ($Type) {
+               case 'plugins':
+                  $PluginInfo = Gdn::PluginManager()->GetPluginInfo($Key);
+                  $Version = GetValue('Version', $PluginInfo, $Version);
+                  break;
+               case 'themes':
+                  if ($ThemeVersion === NULL) {
+                     $ThemeInfo = Gdn::ThemeManager()->GetThemeInfo(Theme());
+                     if ($ThemeInfo !== FALSE) {
+                        $ThemeVersion = GetValue('Version', $ThemeInfo, $Version);
+                     } else {
+                        $ThemeVersion = $Version;
+                     }
+                  }
+                  $Version = $ThemeVersion;
+                  break;
+            }
+         }
+
+         $Result.= 'v='.urlencode($Version);
+      }
+      return $Result;
+   }
+}
+
 if (!function_exists('StringBeginsWith')) {
    /** Checks whether or not string A begins with string B.
     *
     * @param string $A The main string to check.
     * @param string $B The substring to check against.
     * @param bool $CaseInsensitive Whether or not the comparison should be case insensitive.
-    * @return bool
+    * @param bool Whether or not to trim $B off of $A if it is found.
+    * @return bool|string Returns true/false unless $Trim is true.
     */
-   function StringBeginsWith($A, $B, $CaseInsensitive = FALSE) {
+   function StringBeginsWith($A, $B, $CaseInsensitive = FALSE, $Trim = FALSE) {
       if (strlen($A) < strlen($B))
          return FALSE;
       elseif (strlen($B) == 0)
          return TRUE;
-      else
-         return substr_compare($A, $B, 0, strlen($B), $CaseInsensitive) == 0;
+      else {
+         $Result = substr_compare($A, $B, 0, strlen($B), $CaseInsensitive) == 0;
+         if ($Trim)
+            $Result = $Result ? substr($A, strlen($B)) : $A;
+         return $Result;
+      }
    }
 }
 
@@ -1602,15 +1936,20 @@ if (!function_exists('StringEndsWith')) {
     * @param string $A The main string to check.
     * @param string $B The substring to check against.
     * @param bool $CaseInsensitive Whether or not the comparison should be case insensitive.
-    * @return bool
+    * @param bool Whether or not to trim $B off of $A if it is found.
+    * @return bool|string Returns true/false unless $Trim is true.
     */
-   function StringEndsWith($A, $B, $CaseInsensitive = FALSE) {
+   function StringEndsWith($A, $B, $CaseInsensitive = FALSE, $Trim = FALSE) {
       if (strlen($A) < strlen($B))
          return FALSE;
       elseif (strlen($B) == 0)
          return TRUE;
-      else
-         return substr_compare($A, $B, -strlen($B), strlen($B), $CaseInsensitive) == 0;
+      else {
+         $Result = substr_compare($A, $B, -strlen($B), strlen($B), $CaseInsensitive) == 0;
+         if ($Trim)
+            $Result = $Result ? substr($A, 0, -strlen($B)) : $A;
+         return $Result;
+      }
    }
 }
 
@@ -1677,6 +2016,8 @@ if (!function_exists('TouchValue')) {
 			$Collection[$Key] = $Default;
 		elseif(is_object($Collection) && !property_exists($Collection, $Key))
 			$Collection->$Key = $Default;
+
+      return GetValue($Key, $Collection);
 	}
 }
 

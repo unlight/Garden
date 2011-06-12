@@ -24,6 +24,7 @@ class ActivityModel extends Gdn_Model {
          ->Select('au.Name', '', 'ActivityName')
          ->Select('au.Gender', '', 'ActivityGender')
          ->Select('au.Photo', '', 'ActivityPhoto')
+         ->Select('au.Email', '', 'ActivityEmail')
          ->Select('ru.Name', '', 'RegardingName')
          ->Select('ru.Gender', '', 'RegardingGender')
          ->From('Activity a')
@@ -76,10 +77,11 @@ class ActivityModel extends Gdn_Model {
       $this->SQL->Where('a.CommentActivityID is null');
       if ($UserID != '') {
          $this->SQL
-            ->BeginWhereGroup()
-            ->Where('a.ActivityUserID', $UserID)
-            ->OrWhere('a.RegardingUserID', $UserID)
-            ->EndWhereGroup();
+            //->BeginWhereGroup()
+            ->Where('a.ActivityUserID', $UserID);
+            // ->OrWhere('a.RegardingUserID', $UserID)
+            //->EndWhereGroup();
+            // mosullivan 2011-03-08: "Or" killing query speed
       }
       
       $Session = Gdn::Session();
@@ -178,6 +180,23 @@ class ActivityModel extends Gdn_Model {
          ->Get();
    }
    
+   public function GetNotificationsSince($UserID, $LastActivityID, $FilterToActivityTypeIDs = '', $Limit = '5') {
+      $this->ActivityQuery();
+      $this->FireEvent('BeforeGetNotificationsSince');
+		if (is_array($FilterToActivityTypeIDs))
+			$this->SQL->WhereIn('a.ActivityTypeID', $FilterToActivityTypeIDs);
+		
+      $Result = $this->SQL
+         ->Where('RegardingUserID', $UserID)
+         ->Where('a.ActivityID >', $LastActivityID)
+         ->Where('t.Notify', '1')
+         ->Limit($Limit, 0)
+         ->OrderBy('a.ActivityID', 'desc')
+         ->Get();
+
+      return $Result;
+   }
+   
    public function GetCountNotifications($UserID) {
       $this->SQL
          ->Select('a.ActivityID', 'count', 'ActivityCount')
@@ -204,14 +223,23 @@ class ActivityModel extends Gdn_Model {
    }
    
    public function Add($ActivityUserID, $ActivityType, $Story = '', $RegardingUserID = '', $CommentActivityID = '', $Route = '', $SendEmail = '') {
-      // Make sure the user is authenticated
+      static $ActivityTypes = array();
+   
+      // Make sure the user is authenticated.
+
       // Get the ActivityTypeID & see if this is a notification
-      $ActivityTypeRow = $this->SQL
-         ->Select('ActivityTypeID, Name, Notify')
-         ->From('ActivityType')
-         ->Where('Name', $ActivityType)
-         ->Get()
-         ->FirstRow();
+      if (isset($ActivityTypes[$ActivityType])) {
+         $ActivityTypeRow = $ActivityTypes[$ActivityType];
+      } else {
+         $ActivityTypeRow = $this->SQL
+            ->Select('ActivityTypeID, Name, Notify')
+            ->From('ActivityType')
+            ->Where('Name', $ActivityType)
+            ->Get()
+            ->FirstRow();
+
+         $ActivityTypes[$ActivityType] = $ActivityTypeRow;
+      }
          
       if ($ActivityTypeRow !== FALSE) {
          $ActivityTypeID = $ActivityTypeRow->ActivityTypeID;
@@ -226,10 +254,10 @@ class ActivityModel extends Gdn_Model {
 
       // Massage $SendEmail to allow for only sending an email.
       $QueueEmail = FALSE;
-      if ($SendEmail == 'Only') {
+      if ($SendEmail === 'Only') {
          $SendEmail = '';
          $AddActivity = FALSE;
-      } else if ($SendEmail == 'QueueOnly') {
+      } else if ($SendEmail === 'QueueOnly') {
          $SendEmail = '';
          $QueueEmail = TRUE;
          $AddActivity = FALSE;
@@ -361,7 +389,7 @@ class ActivityModel extends Gdn_Model {
    /**
     * Queue a notification for sending.
     */
-   public function QueueNotification($ActivityID, $Story = '') {
+   public function QueueNotification($ActivityID, $Story = '', $Position = 'last') {
       $Activity = $this->GetID($ActivityID);
       if (!is_object($Activity))
          return;
@@ -394,12 +422,12 @@ class ActivityModel extends Gdn_Model {
             );
             if (!array_key_exists($User->UserID, $this->_NotificationQueue))
                $this->_NotificationQueue[$User->UserID] = array();
-            
-            $this->_NotificationQueue[$User->UserID][] = array(
-               'ActivityID' => $ActivityID,
-               'User' => $User,
-               'Email' => $Email
-            );
+
+            $Notification = array('ActivityID' => $ActivityID, 'User' => $User, 'Email' => $Email);
+            if ($Position == 'first')
+               $this->_NotificationQueue[$User->UserID] = array_merge(array($Notification), $this->_NotificationQueue[$User->UserID]);
+            else
+               $this->_NotificationQueue[$User->UserID][] = $Notification;
          }
       }
    }

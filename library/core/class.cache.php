@@ -42,6 +42,12 @@ abstract class Gdn_Cache {
    const FEATURE_EXPIRY       = 'f_expiry';
    // Allows set/get timeouts
    const FEATURE_TIMEOUT      = 'f_timeout';
+   // Allows disabling usage of key prefix
+   const FEATURE_NOPREFIX     = 'f_noprefix';
+   // Allows forcing alternate key prefix
+   const FEATURE_FORCEPREFIX  = 'f_forceprefix';
+   // Allows querying DB for missing keys, or firing a callback
+   const FEATURE_FALLBACK     = 'f_fallback';
    
    /**
    * Location - SERVER:IP, Filepath, etc
@@ -118,6 +124,14 @@ abstract class Gdn_Cache {
       return $CacheObject;
    }
    
+   /**
+    * Get the status of the active cache
+    * 
+    * Return whether or not the current cache method is enabled.
+    * 
+    * @param type $ForceEnable
+    * @return bool status of active cache
+    */
    public static function ActiveEnabled($ForceEnable = FALSE) {
       $AllowCaching = FALSE;
       
@@ -160,6 +174,14 @@ abstract class Gdn_Cache {
       return $ActiveCache;
    }
    
+   /**
+    * Returns the storage data for the active cache
+    * 
+    * For FileCache, the folder. For Memcache, the server(s).
+    * 
+    * @param type $ForceMethod
+    * @return mixed Active Store Location
+    */
    public static function ActiveStore($ForceMethod = NULL) {
       $ActiveCache = self::ActiveCache();
       if (!is_null($ForceMethod))
@@ -204,6 +226,11 @@ abstract class Gdn_Cache {
    * @param string $Key Cache key used for storage
    * @param mixed $Value Value to be cached
    * @param array $Options
+   *   - FEATURE_COMPRESS: Allows items to be internally compressed/decompressed (bool)
+   *   - FEATURE_EXPIRY: Allows items to autoexpire (seconds)
+   *   - FEATURE_NOPREFIX: Allows disabling usage of key prefix (bool)
+   *   - FEATURE_FORCEPREFIX: Allows forcing alternate key prefix (string)
+   *   - FEATURE_FALLBACK: Allows querying DB for missing keys, or firing a callback (see Gdn_Cache->Fallback)
    * @return boolean TRUE on success or FALSE on failure.
    */
    abstract public function Store($Key, $Value, $Options = array());
@@ -285,6 +312,123 @@ abstract class Gdn_Cache {
    abstract public function AddContainer($Options);
    
    /**
+    * 
+    * 
+    * @param type $Key Cache key
+    * @param type $Options
+    * @return mixed
+    */
+   protected function Fallback($Key, $Options) {
+      $Fallback = GetValue(Gdn_Cache::FEATURE_FALLBACK, $Options, NULL);
+      if (is_null($Fallback))
+         return Gdn_Cache::CACHEOP_FAILURE;
+      
+      $FallbackType = array_shift($Fallback);
+      switch ($FallbackType) {
+         case 'query':
+            $QueryFallbackField = array_shift($Fallback);
+            $QueryFallbackCode = array_shift($Fallback);
+            $FallbackResult = Gdn::Database()->Query($QueryFallbackCode);
+            if ($FallbackResult->NumRows()) {
+               if (!is_null($QueryFallbackField))
+                  $FallbackResult = GetValue($QueryFallbackField, $FallbackResult->FirstRow(DATASET_TYPE_ARRAY));
+               else
+                  $FallbackResult = $FallbackResult->ResultArray();
+            }
+            break;
+         case 'callback':
+            $CallbackFallbackMethod = array_shift($Fallback);
+            $CallbackFallbackArgs = $Fallback;
+            $FallbackResult = call_user_func_array($CallbackFallbackMethod, $CallbackFallbackArgs);
+            break;
+      }
+      Gdn::Cache()->Store($Key, $FallbackResult);
+      return $FallbackResult;
+   }
+   
+   public function GetPrefix($ForcePrefix = NULL, $WithRevision = TRUE) {
+      static $ConfigPrefix = FALSE;
+      
+      // Allow overriding the prefix
+      if (!is_null($ForcePrefix))
+         return $ForcePrefix;
+       
+      // Keep searching for the prefix until it is defined
+      if ($ConfigPrefix === FALSE) {
+         
+         // Allow vfcom-infrastructure to set the prefix automatically
+         if (defined('FORCE_CACHE_PREFIX'))
+            $ConfigPrefix = FORCE_CACHE_PREFIX;
+         
+         if ($ConfigPrefix === FALSE)
+            $ConfigPrefix = C('Cache.Prefix', FALSE);
+         
+      }
+      
+      // Lookup Revision if we have a prefix.
+      $RevisionNumber = FALSE;
+      if ($WithRevision && $ConfigPrefix !== FALSE) {
+         $CacheRevision = $this->GetRevision($ConfigPrefix);
+         if (!is_null($CacheRevision))
+            $RevisionNumber = $CacheRevision;
+      }
+      
+      $Response = $ConfigPrefix;
+      if ($WithRevision && $RevisionNumber !== FALSE && $ConfigPrefix !== FALSE)
+         $Response .= ".rev{$RevisionNumber}";
+         
+      return ($ConfigPrefix === FALSE) ? NULL : $Response;
+   }
+   
+   public function GetRevision($ForcePrefix = NULL, $Force = FALSE) {
+      static $CacheRevision = FALSE;
+      
+      if ($CacheRevision === FALSE || $Force) {
+         $ConfigPrefix = $ForcePrefix;
+         if (is_null($ConfigPrefix))
+            $ConfigPrefix = $this->GetPrefix(NULL, FALSE);
+
+         $CacheRevisionKey = "{$ConfigPrefix}.Revision";
+         $CacheRevision = $this->Get($CacheRevisionKey, array(
+            Gdn_Cache::FEATURE_NOPREFIX   => TRUE
+         ));
+         
+         if ($CacheRevision === Gdn_Cache::CACHEOP_FAILURE)
+            $CacheRevision = 1;
+      }
+      
+      return $CacheRevision;
+   }
+   
+   public function IncrementRevision() {
+      $CachePrefix = $this->GetPrefix(NULL, FALSE);
+      if ($CachePrefix === FALSE) return FALSE;
+      
+      $CacheRevisionKey = "{$CachePrefix}.Revision";
+      $Incremented = $this->Increment($CacheRevisionKey, 1, array(
+         Gdn_Cache::FEATURE_NOPREFIX   => TRUE
+      ));
+      
+      if (!$Incremented) {
+         return $this->Store($CacheRevisionKey, 2, array(
+            Gdn_Cache::FEATURE_NOPREFIX   => TRUE
+         ));
+      }
+      
+      return TRUE;
+   }
+   
+   public function MakeKey($Key, $Options) {
+      $UsePrefix = !GetValue(Gdn_Cache::FEATURE_NOPREFIX, $Options, FALSE);
+      $ForcePrefix = GetValue(Gdn_Cache::FEATURE_FORCEPREFIX, $Options, NULL);
+      
+      if ($UsePrefix)
+         $Key = $this->GetPrefix($ForcePrefix).'!'.$Key;
+      
+      return $Key;
+   }
+   
+   /**
    * Flag this cache as being capable of perfoming a feature
    * 
    *  FEATURE_COMPRESS: this cache can compress and decompress values on the fly
@@ -319,7 +463,7 @@ abstract class Gdn_Cache {
    }
    
    protected function Failure($Message) {
-      if (defined("DEBUG") && DEBUG)
+      if (Debug())
          throw new Exception($Message);
       else
          return Gdn_Cache::CACHEOP_FAILURE;

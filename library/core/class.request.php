@@ -198,9 +198,9 @@ class Gdn_Request {
    }
 
    /**
-    * Get a value from the post array or return the entire post array.
+    * Get a value from the GET array or return the entire GET array.
     *
-    * @param string|null $Key The key of the post item or null to return the entire post array.
+    * @param string|null $Key The key of the get item or null to return the entire get array.
     * @param mixed $Default The value to return if the item isn't set.
     * @return mixed
     */
@@ -291,6 +291,10 @@ class Gdn_Request {
     */
    public function Host($Hostname = NULL) {
       return $this->RequestHost($Hostname);
+   }
+
+   public function IpAddress() {
+      return $this->GetValue('REMOTE_ADDR');
    }
 
    /**
@@ -576,8 +580,13 @@ class Gdn_Request {
 //      if ($Filename && $Filename != 'default')
 //         $Result .= ConcatSep('/', $Result, $Filename);
       $Get = $this->GetRequestArguments(self::INPUT_GET);
-      if (count($Get) > 0)
-         $Result .= '?'.http_build_query($Get);
+      if (count($Get) > 0) {
+         // mosullivan 2011-05-04 - There is a bug in this code that causes a qs
+         // param to be present in the path, which makes appending with a ?
+         // invalid. This code is too nasty to figure out. Kludge.
+         $Result .= strpos($Result, '?') === FALSE ? '?' : '&';
+         $Result .= http_build_query($Get);
+      }
 
       return $Result;
    }
@@ -730,7 +739,7 @@ class Gdn_Request {
 
       if (!$RewriteUrls) {
          $Parts[] = $this->_EnvironmentElement('Script').'?p=';
-         $Query = str_replace('?', '&amp;', $Query);
+         $Query = str_replace('?', '&', $Query);
       }
 
       if($Path == '') {

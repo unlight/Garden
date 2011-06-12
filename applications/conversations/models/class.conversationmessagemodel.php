@@ -60,8 +60,8 @@ class ConversationMessageModel extends Gdn_Model {
          ->Select('iu.Photo', '', 'InsertPhoto')
          ->From('ConversationMessage cm')
          ->Join('Conversation c', 'cm.ConversationID = c.ConversationID')
-         ->Join('UserConversation uc', 'c.ConversationID = uc.ConversationID and uc.UserID = '.$ViewingUserID)
-         ->Join('User iu', 'cm.InsertUserID = iu.UserID')
+         ->Join('UserConversation uc', 'c.ConversationID = uc.ConversationID and uc.UserID = '.$ViewingUserID, 'left')
+         ->Join('User iu', 'cm.InsertUserID = iu.UserID', 'left')
          ->BeginWhereGroup()
          ->Where('uc.DateCleared is null') 
          ->OrWhere('uc.DateCleared <', 'cm.DateInserted', TRUE, FALSE) // Make sure that cleared conversations do not show up unless they have new messages added.
@@ -172,6 +172,7 @@ class ConversationMessageModel extends Gdn_Model {
          $Fields['Format'] = C('Conversations.Message.Format','Ham');
          
          $MessageID = $this->SQL->Insert($this->Name, $Fields);
+         $this->LastMessageID = $MessageID;
          $ConversationID = ArrayValue('ConversationID', $Fields, 0);
          $Px = $this->SQL->Database->DatabasePrefix;
 
@@ -226,6 +227,9 @@ class ConversationMessageModel extends Gdn_Model {
 
          $ActivityModel = new ActivityModel();
          foreach ($UnreadData->Result() as $User) {
+            if ($Session->UserID == $User->UserID)
+               continue; // don't notify self.
+
             // Notify the users of the new message.
             $ActivityID = $ActivityModel->Add(
                $Session->UserID,

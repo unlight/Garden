@@ -48,11 +48,8 @@ class ActivityController extends Gdn_Controller {
       
       $this->AddCssFile('style.css');
       
-      // Guest module
-      $GuestModule = new GuestModule($this);
-      $this->AddModule($GuestModule);
-      
-      // SignedIn module
+      // Add Modules
+      $this->AddModule('GuestModule');
       $this->AddModule('SignedInModule');
       
       parent::Initialize();
@@ -236,7 +233,7 @@ class ActivityController extends Gdn_Controller {
             );
             $this->Form->SetValidationResults($this->ActivityModel->ValidationResults());
             if ($this->Form->ErrorCount() > 0)
-               $this->StatusMessage = $this->Form->Errors();
+               $this->ErrorMessage($this->Form->Errors());
          }
       }
       

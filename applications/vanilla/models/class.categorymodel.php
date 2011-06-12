@@ -20,6 +20,8 @@ Contact Vanilla Forums Inc. at support [at] vanillaforums [dot] com
  * @package Vanilla
  */
 class CategoryModel extends Gdn_Model {
+   public $Watching = FALSE;
+
    /**
     * Class constructor. Defines the related database table name.
     * 
@@ -28,6 +30,82 @@ class CategoryModel extends Gdn_Model {
     */
    public function __construct() {
       parent::__construct('Category');
+   }
+
+   public static function CategoryWatch() {
+      $Categories = self::Categories();
+      
+      $Watch = array();
+      $All = TRUE;
+      
+      foreach ($Categories as $CategoryID => $Category) {
+         if ($CategoryID == -1)
+            continue; // no root
+         
+         if ($Category['PermsDiscussionsView'] && $Category['Following']) {
+            $Watch[] = $CategoryID;
+         } else {
+            $All = FALSE;
+         }
+      }
+      if ($All)
+         return TRUE;
+
+      return $Watch;
+   }
+
+   public static function &Categories($ID = FALSE) {
+      static $Categories = NULL;
+
+      if ($Categories == NULL) {
+         $Sql = Gdn::SQL();
+         $Sql = clone $Sql;
+         $Session = Gdn::Session();
+
+         $Sql->Select('c.*')
+            ->Select('lc.DateInserted', '', 'DateLastComment')
+            ->From('Category c')
+            ->Join('Comment lc', 'c.LastCommentID = lc.CommentID', 'left')
+            ->OrderBy('c.TreeLeft');
+
+         if ($Session->UserID > 0) {
+            $Sql->Select('uc.DateMarkedRead as UserDateMarkedRead, uc.Unfollow')
+               ->Join('UserCategory uc', 'c.CategoryID = uc.CategoryID and uc.UserID = '.Gdn::Session()->UserID, 'left');
+         }
+
+         $Categories = $Sql->Get()->ResultArray();
+         $Categories = Gdn_DataSet::Index($Categories, 'CategoryID');
+         self::CalculateData($Categories);
+
+         // Add permissions.
+         foreach ($Categories as $CategoryID => &$Category) {
+            $Category['PermsDiscussionsView'] = $Session->CheckPermission('Vanilla.Discussions.View', TRUE, 'Category', $Category['PermissionCategoryID']);
+            $Category['PermsDiscussionsAdd'] = $Session->CheckPermission('Vanilla.Discussions.Add', TRUE, 'Category', $Category['PermissionCategoryID']);
+            $Category['PermsDiscussionsEdit'] = $Session->CheckPermission('Vanilla.Discussions.Edit', TRUE, 'Category', $Category['PermissionCategoryID']);
+            $Category['PermsCommentsAdd'] = $Session->CheckPermission('Vanilla.Comments.Add', TRUE, 'Category', $Category['PermissionCategoryID']);
+         }
+      }
+
+      if ($ID !== FALSE) {
+         if (!is_numeric($ID)) {
+            foreach ($Categories as $Category) {
+               if ($Category['UrlCode'] == $ID)
+                  $ID = $Category['CategoryID'];
+            }
+         }
+
+         if (isset($Categories[$ID])) {
+            $Result =& $Categories[$ID];
+            return $Result;
+         } else {
+            $NotFound = NULL;
+            $Result =& $NotFound;
+            return $Result;
+         }
+      } else {
+         $Result =& $Categories;
+         return $Result;
+      }
    }
    
    /**
@@ -214,8 +292,61 @@ class CategoryModel extends Gdn_Model {
 
       return 0;
    }
+
+   /**
+    * Get all of the ancestor categorie above this one.
+    * @param int|string $Category The category ID or url code.
+    * @param bool $CheckPermissions Whether or not to only return the categories with view permission.
+    * @return array
+    */
+   public static function GetAncestors($Category, $CheckPermissions = TRUE) {
+      $Categories = self::Categories();
+      $Result = array();
+      
+      if (is_numeric($Category)) {
+         if (isset($Categories[$Category]))
+            $Category2 = $Categories[$Category];
+      } else {
+         foreach ($Categories as $ID => $Value) {
+            if ($Value['UrlCode'] == $Category) {
+               $Category2 = $Categories[$ID];
+               break;
+            }
+         }
+      }
+
+      if (!isset($Category2))
+         return $Result;
+
+      // Build up the ancestor array by tracing back through parents.
+      $Result[$Category2['CategoryID']] = $Category2;
+      $Max = 20;
+      while (isset($Category2['Parent'])) {
+         if ($CheckPermissions && !$Category2['PermsDiscussionsView'])
+            return;
+
+         if (is_numeric($Category))
+            $ID = $Category2['CategoryID'];
+         else
+            $ID = $Category2['UrlCode'];
+
+         $Result[$ID] = $Category2;
+         unset($Result[$ID]['Parent'], $Result[$ID]['Children']);
+
+         $Category2 = $Category2['Parent'];
+
+         // Check for an infinite loop.
+         if ($Max <= 0)
+            break;
+         $Max--;
+      }
+      $Result = array_reverse($Result, TRUE); // order for breadcrumbs
+      return $Result;
+   }
    
    public function GetDescendantsByCode($Code) {
+      Deprecated('CategoryModel::GetDescendantsByCode', 'CategoryModel::GetAncestors');
+
       // SELECT title FROM tree WHERE lft < 4 AND rgt > 5 ORDER BY lft ASC;
       return $this->SQL
          ->Select('c.ParentCategoryID, c.CategoryID, c.TreeLeft, c.TreeRight, c.Depth, c.Name, c.Description, c.CountDiscussions, c.CountComments, c.AllowDiscussions, c.UrlCode')
@@ -224,6 +355,23 @@ class CategoryModel extends Gdn_Model {
          ->Where('d.UrlCode', $Code)
          ->OrderBy('c.TreeLeft', 'asc')
          ->Get();
+   }
+
+   public function GetSubtree($ParentCategory) {
+
+
+      $this->SQL
+         ->Select('c.*')
+         ->From('Category c')
+         ->Join('Category d', 'c.TreeLeft >= d.TreeLeft and c.TreeRight <= d.TreeRight')
+         ->OrderBy('c.TreeLeft', 'asc');
+
+      if (is_numeric($ParentCategory))
+         $this->SQL->Where('d.CategoryID', $ParentCategory);
+      else
+         $this->SQL->Where('d.Code', $ParentCategory);
+
+      return $this->SQL->Get()->ResultArray();
    }
 
    /**
@@ -245,7 +393,10 @@ class CategoryModel extends Gdn_Model {
 
       // Get the category IDs.
       if ($Permissions == 'Vanilla.Discussions.View') {
-         $CategoryIDs = DiscussionModel::CategoryPermissions();
+         if ($this->Watching)
+            $CategoryIDs = self::CategoryWatch();
+         else
+            $CategoryIDs = DiscussionModel::CategoryPermissions();
          if ($CategoryIDs !== TRUE)
             $this->SQL->WhereIn('c.CategoryID', $CategoryIDs);
       } else {
@@ -254,7 +405,7 @@ class CategoryModel extends Gdn_Model {
 
       // Build base query
       $this->SQL
-         ->Select('c.Name, c.CategoryID, c.TreeRight, c.TreeLeft, c.Depth, c.Description, c.CountDiscussions, c.CountComments, c.UrlCode, c.LastCommentID, c.PermissionCategoryID')
+         ->Select('c.Name, c.CategoryID, c.TreeRight, c.TreeLeft, c.Depth, c.Description, c.CountDiscussions, c.CountComments, c.UrlCode, c.LastCommentID, c.PermissionCategoryID, c.Archived')
          ->Select('co.DateInserted', '', 'DateLastComment')
          ->Select('co.InsertUserID', '', 'LastCommentUserID')
          ->Select('cu.Name', '', 'LastCommentName')
@@ -266,6 +417,15 @@ class CategoryModel extends Gdn_Model {
          ->Join('User cu', 'co.InsertUserID = cu.UserID', 'left')
          ->Join('Discussion d', 'd.DiscussionID = co.DiscussionID', 'left')
          ->Where('c.AllowDiscussions', '1');
+
+      if (Gdn::Session()->UserID > 0) {
+         $UserID = Gdn::Session()->UserID;
+         // Add in user/category stuff.
+         $this->SQL
+            ->Join('UserCategory uc', "uc.UserID = $UserID and uc.CategoryID = c.CategoryID", 'left')
+            ->Select('uc.DateMarkedRead')
+            ->Select('uc.Unfollow');
+      }
 
       // Single record or full list?
       if (is_numeric($CategoryID) && $CategoryID > 0) {
@@ -322,6 +482,34 @@ class CategoryModel extends Gdn_Model {
          ->Get();
       return $ChildData->NumRows() > 0 ? TRUE : FALSE;
    }
+
+   public static function JoinModerators($Data, $Permission = 'Vanilla.Comments.Edit', $Column = 'Moderators') {
+      $Moderators = Gdn::SQL()
+         ->Select('u.UserID, u.Name, u.Photo, u.Email')
+         ->Select('p.JunctionID as CategoryID')
+         ->From('User u')
+         ->Join('UserRole ur', 'ur.UserID = u.UserID')
+         ->Join('Permission p', 'ur.RoleID = p.RoleID')
+         ->Where('`'.$Permission.'`', 1)
+         ->Get()->ResultArray();
+
+      $Moderators = Gdn_DataSet::Index($Moderators, 'CategoryID', array('Unique' => FALSE));
+
+      foreach ($Data as &$Category) {
+         $ID = GetValue('PermissionCategoryID', $Category);
+         $Mods = GetValue($ID, $Moderators, array());
+         $ModIDs = array();
+         $UniqueMods = array();
+         foreach ($Mods as $Mod) {
+            if (!in_array($Mod['UserID'], $ModIDs)) {
+               $ModIDs[] = $Mod['UserID'];
+               $UniqueMods[] = $Mod;
+            }
+            
+         }
+         SetValue($Column, $Category, $UniqueMods);
+      }
+   }
    
    /**
     * Rebuilds the category tree. We are using the Nested Set tree model.
@@ -347,6 +535,9 @@ class CategoryModel extends Gdn_Model {
       // Build a tree structure out of the categories.
       $Root = NULL;
       foreach ($Categories as &$Cat) {
+         if (!isset($Cat['CategoryID']))
+            continue;
+         
          // Backup category settings for efficient database saving.
          try {
             $Cat['_TreeLeft'] = $Cat['TreeLeft'];
@@ -376,9 +567,12 @@ class CategoryModel extends Gdn_Model {
 
       // Set the tree attributes of the tree.
       $this->_SetTree($Root);
+      unset($Root);
 
       // Save the tree structure.
       foreach ($Categories as $Cat) {
+         if (!isset($Cat['CategoryID']))
+            continue;
          if ($Cat['_TreeLeft'] != $Cat['TreeLeft'] || $Cat['_TreeRight'] != $Cat['TreeRight'] || $Cat['_Depth'] != $Cat['Depth'] || $Cat['PermissionCategoryID'] != $Cat['PermissionCategoryID'] || $Cat['_ParentCategoryID'] != $Cat['ParentCategoryID'] || $Cat['Sort'] != $Cat['TreeLeft']) {
             $this->SQL->Put('Category',
                array('TreeLeft' => $Cat['TreeLeft'], 'TreeRight' => $Cat['TreeRight'], 'Depth' => $Cat['Depth'], 'PermissionCategoryID' => $Cat['PermissionCategoryID'], 'ParentCategoryID' => $Cat['ParentCategoryID'], 'Sort' => $Cat['TreeLeft']),
@@ -451,7 +645,7 @@ class CategoryModel extends Gdn_Model {
             $CategoryID = -1;
             
          $ParentCategoryID = GetValue('parent_id', $Node);
-         if ($ParentCategoryID == 'root')
+         if (in_array($ParentCategoryID, array('root', 'none')))
             $ParentCategoryID = -1;
 
          $PermissionCategoryID = GetValueR("$CategoryID.PermissionCategoryID", $PermTree, 0);
@@ -541,6 +735,11 @@ class CategoryModel extends Gdn_Model {
             
       }
       
+		//	Prep and fire event
+		$this->EventArguments['FormPostValues'] = &$FormPostValues;
+		$this->EventArguments['CategoryID'] = $CategoryID;
+		$this->FireEvent('BeforeSaveCategory');
+      
       // Validate the form posted values
       if ($this->Validate($FormPostValues, $Insert)) {
          $Fields = $this->Validation->SchemaValidationFields();
@@ -555,6 +754,11 @@ class CategoryModel extends Gdn_Model {
             $this->Update($Fields, array('CategoryID' => $CategoryID));
          } else {
             $CategoryID = $this->Insert($Fields);
+
+            if ($CustomPermissions && $CategoryID) {
+               $this->SQL->Put('Category', array('PermissionCategoryID' => $CategoryID), array('CategoryID' => $CategoryID));
+            }
+
             $this->RebuildTree(); // Safeguard to make sure that treeleft and treeright cols are added
          }
          
@@ -609,6 +813,17 @@ class CategoryModel extends Gdn_Model {
       
       return $CategoryID;
    }
+
+   public function SaveUserTree($CategoryID, $Set) {
+      // Grab the Category IDs of the tree.
+      $Categories = $this->GetSubtree($CategoryID);
+      foreach ($Categories as $Category) {
+         $this->SQL->Replace(
+            'UserCategory',
+            $Set,
+            array('UserID' => Gdn::Session()->UserID, 'CategoryID' => $Category['CategoryID']));
+      }
+   }
    
    public function ApplyUpdates() {
       // If looking at the root node, make sure it exists and that the nested
@@ -646,7 +861,7 @@ class CategoryModel extends Gdn_Model {
     *
     * @param object $Data SQL result.
     */
-	public function AddCategoryColumns($Data) {
+	public static function AddCategoryColumns($Data) {
 		$Result = &$Data->Result();
       $Result2 = $Result;
 		foreach ($Result as &$Category) {
@@ -656,6 +871,21 @@ class CategoryModel extends Gdn_Model {
          if (!property_exists($Category, 'CountAllComments'))
             $Category->CountAllComments = $Category->CountComments;
 
+         // Calculate the following field.
+         $Following = !((bool)GetValue('Archived', $Category) || (bool)GetValue('Unfollow', $Category));
+         $Category->Following = $Following;
+
+         // Calculate the read field.
+         if (property_exists($Category, 'DateLastComment')) {
+            $DateMarkedRead = GetValue('UserDateMarkedRead', $Category);
+            if (!$DateMarkedRead)
+               $DateMarkedRead = GetValue('DateMarkedRead', $Category);
+            if ($DateMarkedRead || !GetValue('DateLastComment', $Category))
+               $Category->Read = Gdn_Format::ToTimestamp($DateMarkedRead) >= Gdn_Format::ToTimestamp($Category->DateLastComment);
+            else
+               $Category->Read = FALSE;
+         }
+
          foreach ($Result2 as $Category2) {
             if ($Category2->TreeLeft > $Category->TreeLeft && $Category2->TreeRight < $Category->TreeRight) {
                $Category->CountAllDiscussions += $Category2->CountDiscussions;
@@ -663,6 +893,45 @@ class CategoryModel extends Gdn_Model {
             }
          }
 		}
+	}
+
+   protected static function CalculateData(&$Data) {
+		foreach ($Data as &$Category) {
+         $Category['CountAllDiscussions'] = $Category['CountDiscussions'];
+         $Category['CountAllComments'] = $Category['CountComments'];
+         $Category['Url'] = '/categories/'.rawurlencode($Category['UrlCode']);
+
+         // Calculate the following field.
+         $Following = !((bool)GetValue('Archived', $Category) || (bool)GetValue('Unfollow', $Category));
+         $Category['Following'] = $Following;
+
+         // Calculate the read field.
+         if (isset($Category['DateLastComment'])) {
+            $DateMarkedRead = GetValue('UserDateMarkedRead', $Category);
+            if (!$DateMarkedRead)
+               $DateMarkedRead = GetValue('DateMarkedRead', $Category);
+            if ($DateMarkedRead || !GetValue('DateLastComment', $Category))
+               $Category['Read'] = Gdn_Format::ToTimestamp($DateMarkedRead) >= Gdn_Format::ToTimestamp($Category['DateLastComment']);
+            else
+               $Category['Read'] = FALSE;
+         }
+         $Category['Children'] = array();
+		}
+      
+      $Keys = array_reverse(array_keys($Data));
+      foreach ($Keys as $Key) {
+         $Cat = $Data[$Key];
+         $ParentID = $Cat['ParentCategoryID'];
+
+         if (isset($Data[$ParentID])) {
+            $Data[$ParentID]['CountAllDiscussions'] += $Cat['CountAllDiscussions'];
+            $Data[$ParentID]['CountAllComments'] += $Cat['CountAllComments'];
+            $Data[$ParentID]['Children'][] =& $Data[$Key];
+
+            if ($ParentID != $Cat['CategoryID'])
+               $Data[$Key]['Parent'] =& $Data[$ParentID];
+         }
+      }
 	}
    
 }

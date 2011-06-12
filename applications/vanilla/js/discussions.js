@@ -1,23 +1,13 @@
 jQuery(document).ready(function($) {
    
    // Show drafts delete button on hover
-   // Show options on each row (if present)
    $('li.Item').livequery(function() {
-      var row = this;
-      var opts = $(row).find('ul.Options');
-      var btn = $(row).find('a.Delete');
-      $(opts).hide();
+      var btn = $(this).find('a.Delete');
       $(btn).hide();
-      $(row).hover(function() {
-         $(opts).show();
+      $(this).hover(function() {
          $(btn).show();
-         $(row).addClass('Active');
       }, function() {
-         if (!$(opts).find('li.Parent').hasClass('Active'))
-            $(opts).hide();
-            
          $(btn).hide();
-         $(row).removeClass('Active');            
       });
    });
 
@@ -29,5 +19,34 @@ jQuery(document).ready(function($) {
             afterPageLoaded: function() { $(document).trigger('DiscussionPagingComplete'); }
          });
       });
+
+   /* Discussion Checkboxes */
+   $('.DiscussionsTabs .Administration :checkbox').click(function() {
+      if ($(this).attr('checked'))
+         $('.DataList .Administration :checkbox').attr('checked', 'checked');
+      else
+         $('.DataList .Administration :checkbox').removeAttr('checked');
+   });
+   $('.Administration :checkbox').click(function() {
+      // retrieve all checked ids
+      var checkIDs = $('.DataList .Administration :checkbox');
+      var aCheckIDs = new Array();
+      checkIDs.each(function() {
+         item = $(this);
+         aCheckIDs[aCheckIDs.length] = { 'checkId' : item.val() , 'checked' : item.attr('checked') };
+      });
+      $.ajax({
+         type: "POST",
+         url: gdn.url('/moderation/checkeddiscussions'),
+         data: { 'CheckIDs' : aCheckIDs, 'DeliveryMethod' : 'JSON', 'TransientKey' : gdn.definition('TransientKey') },
+         dataType: "json",
+         error: function(XMLHttpRequest, textStatus, errorThrown) {
+            gdn.informMessage(XMLHttpRequest.responseText, { 'CssClass' : 'Dismissable' });
+         },
+         success: function(json) {
+            gdn.inform(json);
+         }
+      });
+   });
 
 });

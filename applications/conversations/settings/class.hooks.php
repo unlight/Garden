@@ -48,13 +48,21 @@ class ConversationsHooks implements Gdn_IPlugin {
       if ($Session->IsValid() && $Session->UserID != $Sender->User->UserID) {
          $SideMenu = $Sender->EventArguments['SideMenu'];
          $SideMenu->AddLink('Options', sprintf(T('Send %s a Message'), $Sender->User->Name), '/messages/add/'.$Sender->User->Name, FALSE, array('class' => 'MessageLink'));
+         
+
+//         if ($Session->CheckPermission('Conversations.Moderation.Manage')) {
+            $SideMenu->AddLink('Options', T('Inbox'), '/messages/inbox?userid='.$Sender->User->UserID, 'Conversations.Moderation.Manage', array('class' => 'InboxLink'));
+//         }
+
          $Sender->EventArguments['SideMenu'] = $SideMenu;
       }
    }
    
    public function ProfileController_AfterPreferencesDefined_Handler(&$Sender) {
-      $Sender->Preferences['Email Notifications']['Email.ConversationMessage'] = T('Notify me of private messages.');
-      $Sender->Preferences['Email Notifications']['Email.AddedToConversation'] = T('Notify me when I am added to private conversations.');
+      $Sender->Preferences['Notifications']['Email.ConversationMessage'] = T('Notify me of private messages.');
+      $Sender->Preferences['Notifications']['Email.AddedToConversation'] = T('Notify me when I am added to private conversations.');
+      $Sender->Preferences['Notifications']['Popup.ConversationMessage'] = T('Notify me of private messages.');
+      $Sender->Preferences['Notifications']['Popup.AddedToConversation'] = T('Notify me when I am added to private conversations.');
    }
    
    public function Base_Render_Before(&$Sender) {
@@ -67,7 +75,6 @@ class ConversationsHooks implements Gdn_IPlugin {
             $Inbox .= ' <span>'.$CountUnreadConversations.'</span>';
             
          $Sender->Menu->AddLink('Conversations', $Inbox, '/messages/all', FALSE, array('Standard' => TRUE));
-         // $Sender->Menu->AddLink('Conversations', T('New Conversation'), '/messages/add', FALSE);
       }
    }
    
