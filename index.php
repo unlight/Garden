@@ -1,6 +1,6 @@
 <?php
 define('APPLICATION', 'Vanilla');
-define('APPLICATION_VERSION', '2.0.17.8');
+define('APPLICATION_VERSION', '2.0.17.10');
 /*
 Copyright 2008, 2009 Vanilla Forums Inc.
 This file is part of Garden.
@@ -11,10 +11,7 @@ Contact Vanilla Forums Inc. at support [at] vanillaforums [dot] com
 */
 
 // Report and track all errors.
-if(defined('DEBUG'))
-   error_reporting(E_ALL);
-else
-   error_reporting(E_ERROR | E_PARSE | E_CORE_ERROR | E_COMPILE_ERROR | E_USER_ERROR | E_RECOVERABLE_ERROR);
+error_reporting(E_ALL);
 ini_set('display_errors', 'on');
 ini_set('track_errors', 1);
 
