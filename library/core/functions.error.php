@@ -70,6 +70,13 @@ function Gdn_ExceptionHandler($Exception) {
             $N = ($IsError) ? '1' : '0';
             $SenderMethod = GetValueR($N.'.function', $SenderTrace, $SenderMethod);
             $SenderObject = GetValueR($N.'.class', $SenderTrace, $SenderObject);
+            if ($SenderMethod == 'trigger_error' && $SenderObject == 'PHP') {
+               // move up and get who send trigger_error
+               $SenderMethod = GetValueR('2.function', $SenderTrace, $SenderMethod);
+               $SenderObject = GetValueR('2.class', $SenderTrace, $SenderObject);
+               $File = GetValueR('2.file', $SenderTrace, $File);
+               $Line = GetValueR('2.line', $SenderTrace, $Line);
+            }
       }
       
       $SenderMessage = strip_tags($SenderMessage);
