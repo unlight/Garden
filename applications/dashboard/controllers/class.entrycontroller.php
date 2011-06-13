@@ -76,6 +76,12 @@ class EntryController extends Gdn_Controller {
             $this->MasterView = 'empty';
             break;
       }
+      
+      // Define gender dropdown options
+      $this->GenderOptions = array(
+         'm' => T('Male'),
+         'f' => T('Female')
+      );
    }
    
    /**
@@ -908,12 +914,6 @@ class EntryController extends Gdn_Controller {
       $this->FireEvent("Register");
       
       $this->Form->SetModel($this->UserModel);
-
-      // Define gender dropdown options
-      $this->GenderOptions = array(
-         'm' => T('Male'),
-         'f' => T('Female')
-      );
 
       // Make sure that the hour offset for new users gets defined when their account is created
       $this->AddJsFile('entry.js');
