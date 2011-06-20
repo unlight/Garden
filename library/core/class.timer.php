@@ -63,7 +63,7 @@ class Gdn_Timer {
 				$Span = $Time - $PrevTime;
 				$m = floor($Span / 60);
 				$s = $Span - $m * 60;
-				echo sprintf(' (%d:%05.2f)', $m, $s);
+				echo sprintf(' (%d:%06.3)', $m, $s);
 			}
 		}
 		echo "\n";
