@@ -199,6 +199,106 @@ class Gdn_Form extends Gdn_Pluggable {
    }
 
    /**
+    * Returns XHTML for a select list containing categories that the user has
+    * permission to use.
+    *
+    * @param array $FieldName An array of category data to render.
+    * @param array $Options An associative array of options for the select. Here
+    * is a list of "special" options and their default values:
+    *
+    *   Attribute     Options                        Default
+    *   ------------------------------------------------------------------------
+    *   Value         The ID of the category that    FALSE
+    *                 is selected.
+    *   IncludeNull   Include a blank row?           FALSE
+    *   CategoryData  Custom set of categories to    CategoryModel::Categories()
+    *                 display.
+    *
+    * @return string
+    */
+   public function CategoryDropDown($FieldName = 'CategoryID', $Options = FALSE) {
+      $Value = ArrayValueI('Value', $Options); // The selected category id
+      $CategoryData = GetValue('CategoryData', $Options, CategoryModel::Categories());
+      
+      // Sanity check
+      if (is_object($CategoryData))
+         $CategoryData = (array)$CategoryData;
+      else if (!is_array($CategoryData))
+         $CategoryData = array();
+
+      // Respect category permissions (remove categories that the user shouldn't see).
+      $SafeCategoryData = array();
+      foreach ($CategoryData as $CategoryID => $Category) {
+         if ($Value != $CategoryID) {
+            if ($Category['CategoryID'] <= 0 || !$Category['PermsDiscussionsAdd'])
+               continue;
+
+            if ($Category['Archived'])
+               continue;
+         }
+
+         $SafeCategoryData[$CategoryID] = $Category;
+      }  
+      
+      // Opening select tag
+      $Return = '<select';
+      $Return .= $this->_IDAttribute($FieldName, $Options);
+      $Return .= $this->_NameAttribute($FieldName, $Options);
+      $Return .= $this->_AttributesToString($Options);
+      $Return .= ">\n";
+      
+      // Get value from attributes
+      if ($Value === FALSE) 
+         $Value = $this->GetValue($FieldName);
+      if (!is_array($Value)) 
+         $Value = array($Value);
+         
+      // Prevent default $Value from matching key of zero
+      $HasValue = ($Value !== array(FALSE) && $Value !== array('')) ? TRUE : FALSE;
+      
+      // Start with null option?
+      $IncludeNull = GetValue('IncludeNull', $Options);
+      if ($IncludeNull === TRUE)
+         $Return .= '<option value=""></option>';
+         
+      // Show root categories as headings (ie. you can't post in them)?
+      $DoHeadings = C('Vanilla.Categories.DoHeadings');
+      
+      // If making headings disabled and there was no default value for
+      // selection, make sure to select the first non-disabled value, or the
+      // browser will auto-select the first disabled option.
+      $ForceCleanSelection = ($DoHeadings && !$HasValue);
+      
+      // Write out the category options
+      if (is_array($SafeCategoryData)) {
+         foreach($SafeCategoryData as $CategoryID => $Category) {
+            $Depth = GetValue('Depth', $Category, 0);
+            $Disabled = $Depth == 1 && $DoHeadings;
+            $Selected = in_array($CategoryID, $Value) && $HasValue;
+            if ($ForceCleanSelection && $Depth > 1) {
+               $Selected = TRUE;
+               $ForceCleanSelection = FALSE;
+            }
+
+            $Return .= '<option value="' . $CategoryID . '"';
+            if ($Disabled)
+               $Return .= ' disabled="disabled"';
+            else if ($Selected)
+               $Return .= ' selected="selected"'; // only allow selection if NOT disabled
+            
+            $Name = GetValue('Name', $Category, 'Blank Category Name');
+            if ($Depth > 1) {
+               $Name = str_pad($Name, strlen($Name)+$Depth-1, ' ', STR_PAD_LEFT);
+               $Name = str_replace(' ', '&#160;', $Name);
+            }
+               
+            $Return .= '>' . $Name . "</option>\n";
+         }
+      }
+      return $Return . '</select>';
+   }
+
+   /**
     * Returns XHTML for a checkbox input element.
     *
     * Cannot consider all checkbox values to be boolean. (2009-04-02 mosullivan)
@@ -304,10 +404,19 @@ class Gdn_Form extends Gdn_Pluggable {
             $Instance = RemoveKeyFromArray($Instance, array('TextField', 'ValueField'));
             
             $Instance['id'] = $FieldName . $i;
+
+            if (is_array($ID)) {
+               $ValueField = ArrayValueI('ValueField', $Attributes, 'value');
+               $TextField = ArrayValueI('TextField', $Attributes, 'text');
+               $Text = GetValue($TextField, $ID, '');
+               $ID = GetValue($ValueField, $ID, '');
+            } else {
+               
+
+               if (is_numeric($Text))
+                  $Text = $ID;
+            }
             $Instance['value'] = $ID;
-            
-            if (is_numeric($Text)) 
-               $Text = $ID;
             
             if (is_array($CheckedValues) && in_array($ID, $CheckedValues)) {
                $Instance['checked'] = 'checked';
@@ -477,6 +586,7 @@ class Gdn_Form extends Gdn_Pluggable {
       
       // Append the rows.
       $Result .= '<tbody>';
+      $CheckCount = 0;
       foreach($Rows as $RowName => $X) {
          $Result .= '<tr><th>';
          
@@ -496,6 +606,8 @@ class Gdn_Form extends Gdn_Pluggable {
                $Attributes = array('value' => $CheckBox['PostValue']);
                if($CheckBox['Value'])
                   $Attributes['checked'] = 'checked';
+//               $Attributes['id'] = "{$GroupName}_{$FieldName}_{$CheckCount}";
+               $CheckCount++;
                   
                $Result .= $this->CheckBox($FieldName.'[]', '', $Attributes);
             } else {
@@ -1338,26 +1450,23 @@ class Gdn_Form extends Gdn_Pluggable {
       $tmp = $ID;
       $i = 1;
       if ($ForceUniqueID === TRUE) {
-         while(in_array($tmp, $this->_IDCollection)) {
-            $tmp = $ID . $i;
-            $i++;
+         if (array_key_exists($ID, $this->_IDCollection)) {
+            $tmp = $ID.$this->_IDCollection[$ID];
+            $this->_IDCollection[$ID]++;
+         } else {
+            $tmp = $ID;
+            $this->_IDCollection[$ID] = 1;
+            
          }
-         $this->_IDCollection[] = $tmp;
       } else {
          // If not forcing unique (ie. getting the id for a label's "for" tag),
          // get the last used copy of the requested id.
          $Found = FALSE;
-         while(in_array($tmp, $this->_IDCollection)) {
-            $Found = TRUE;
-            $tmp = $ID . $i;
-            $i++;
-         }
-         if ($Found == TRUE && $i > 2) {
-            $i = $i - 2;
-            $tmp = $ID . $i;
-         } else {
+         $Count = GetValue($ID, $this->_IDCollection, 0);
+         if ($Count <= 1)
             $tmp = $ID;
-         }
+         else
+            $tmp = $ID.($Count - 1);
       }
       return $tmp;
    }
@@ -1772,8 +1881,11 @@ class Gdn_Form extends Gdn_Pluggable {
    protected function _IDAttribute(
       $FieldName, $Attributes) {
       // ID from attributes overrides the default.
-      return ' id="' . ArrayValueI('id', $Attributes,
-         $this->EscapeID($FieldName)) . '"';
+      $ID = ArrayValueI('id', $Attributes, FALSE);
+      if (!$ID)
+         $ID = $this->EscapeID($FieldName);
+      
+      return ' id="'.htmlspecialchars($ID).'"';
    }
 
    /**
@@ -1787,17 +1899,8 @@ class Gdn_Form extends Gdn_Pluggable {
     */
    protected function _NameAttribute($FieldName, $Attributes) {
       // Name from attributes overrides the default.
-      if(is_array($Attributes) && array_key_exists('Name', $Attributes)) {
-         $Name = $Attributes['Name'];
-      } else {
-         $Name = $this->EscapeFieldName($FieldName);
-      }
-      if(empty($Name))
-         $Result = '';
-      else
-         $Result = ' name="' . $Name . '"';
-
-      return $Result;
+      $Name = $this->EscapeFieldName(ArrayValueI('name', $Attributes, $FieldName));
+      return (empty($Name)) ? '' : ' name="' . $Name . '"';
    }
    
    /**

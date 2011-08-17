@@ -346,12 +346,12 @@ class Gdn_Controller extends Gdn_Pluggable {
       $this->_FormSaved = '';
       $this->_Json = array();
       $this->_Headers = array(
-         'Expires' =>  'Mon, 26 Jul 1997 05:00:00 GMT', // Make sure the client always checks at the server before using it's cached copy.
+         'Expires' =>  'Sat, 26 Jul 1997 05:00:00 GMT', // Make sure the client always checks at the server before using it's cached copy.
          'X-Garden-Version' => APPLICATION.' '.APPLICATION_VERSION,
          'Content-Type' => Gdn::Config('Garden.ContentType', '').'; charset='.Gdn::Config('Garden.Charset', ''), // PROPERLY ENCODE THE CONTENT
-         'Last-Modified' => gmdate('D, d M Y H:i:s') . ' GMT' // PREVENT PAGE CACHING: always modified (this can be overridden by specific controllers)
-         // $Dispatcher->Header('Cache-Control', 'no-cache, must-revalidate'); // PREVENT PAGE CACHING: HTTP/1.1
-         // $Dispatcher->Header('Pragma', 'no-cache'); // PREVENT PAGE CACHING: HTTP/1.0
+         'Last-Modified' => gmdate('D, d M Y H:i:s') . ' GMT', // PREVENT PAGE CACHING: always modified (this can be overridden by specific controllers)
+         'Cache-Control' => 'no-cache, must-revalidate', // PREVENT PAGE CACHING: HTTP/1.1
+         'Pragma' => 'no-cache' // PREVENT PAGE CACHING: HTTP/1.0
       );
       $this->_ErrorMessages = '';
       $this->_InformMessages = array();
@@ -422,7 +422,19 @@ class Gdn_Controller extends Gdn_Pluggable {
     * @param string $AppFolder The application folder that should contain the JS file. Default is to use the application folder that this controller belongs to.
     */
    public function AddJsFile($FileName, $AppFolder = '', $Options = NULL) {
-      $this->_JsFiles[] = array('FileName' => $FileName, 'AppFolder' => $AppFolder, 'Options' => $Options);
+      $JsInfo = array('FileName' => $FileName, 'AppFolder' => $AppFolder, 'Options' => $Options);
+      
+      if (StringBeginsWith($AppFolder, 'plugins/')) {
+         $Name = StringBeginsWith($AppFolder, 'plugins/', TRUE, TRUE);
+         $Info = Gdn::PluginManager()->GetPluginInfo($Name, Gdn_PluginManager::ACCESS_PLUGINNAME);
+         if ($Info) {
+            $JsInfo['Version'] = GetValue('Version', $Info);
+         }
+      } else {
+         $JsInfo['Version'] = APPLICATION_VERSION;
+      }
+      
+      $this->_JsFiles[] = $JsInfo;
    }
 
    /**
@@ -506,6 +518,10 @@ class Gdn_Controller extends Gdn_Pluggable {
     */
    public function ClearJsFiles() {
       $this->_JsFiles = array();
+   }
+   
+   public function ContentType($ContentType) {
+      $this->SetHeader("Content-Type", $ContentType);
    }
    
    public function CssFiles() {
@@ -912,11 +928,29 @@ class Gdn_Controller extends Gdn_Pluggable {
       else
          $this->_Json['Targets'][] = $Item;
    }
+   
+   /**
+    * Define & return the master view.
+    */
+   public function MasterView() {
+      // Define some default master views unless one was explicitly defined
+      if ($this->MasterView == '') {
+         // If this is a syndication request, use the appropriate master view
+         if ($this->SyndicationMethod == SYNDICATION_ATOM)
+            $this->MasterView = 'atom';
+         else if ($this->SyndicationMethod == SYNDICATION_RSS)
+            $this->MasterView = 'rss';
+         else
+            $this->MasterView = 'default'; // Otherwise go with the default
+      }
+      return $this->MasterView;
+   }
 
    protected $_PageName = NULL;
 
-   /** Gets or sets the name of the page for the controller.
-    *  The page name is meant to be a friendly name suitable to be consumed by developers.
+   /**
+    * Gets or sets the name of the page for the controller.
+    * The page name is meant to be a friendly name suitable to be consumed by developers.
     *
     * @param string|NULL $Value A new value to set.
     */
@@ -1061,8 +1095,7 @@ class Gdn_Controller extends Gdn_Pluggable {
          $this->SetJson('RedirectUrl', $this->RedirectUrl);
          
          // Make sure the database connection is closed before exiting.
-         $Database = Gdn::Database();
-         $Database->CloseConnection();
+         $this->Finalize();
          
          if (!check_utf8($this->_Json['Data']))
             $this->_Json['Data'] = utf8_encode($this->_Json['Data']);
@@ -1168,6 +1201,7 @@ class Gdn_Controller extends Gdn_Pluggable {
       // Remove values that should not be transmitted via api
       $Data = RemoveKeysFromNestedArray($Data, array('Email', 'Password', 'HashMethod', 'DateOfBirth', 'TransientKey', 'Permissions'));
       
+      // Make sure the database connection is closed before exiting.
       $this->Finalize();
 
       // Check for a special view.
@@ -1186,6 +1220,7 @@ class Gdn_Controller extends Gdn_Pluggable {
             break;
          case DELIVERY_METHOD_JSON:
          default:
+            header('Content-Type: application/json', TRUE);
             if ($Callback = $this->Request->Get('callback', FALSE)) {
                // This is a jsonp request.
                exit($Callback.'('.json_encode($Data).');');
@@ -1253,6 +1288,7 @@ class Gdn_Controller extends Gdn_Pluggable {
          return;
       }
 
+      // Make sure the database connection is closed before exiting.
       $this->Finalize();
       $this->SendHeaders();
 
@@ -1298,16 +1334,7 @@ class Gdn_Controller extends Gdn_Pluggable {
    public function RenderMaster() {
       // Build the master view if necessary
       if (in_array($this->_DeliveryType, array(DELIVERY_TYPE_ALL))) {
-         // Define some default master views unless one was explicitly defined
-         if ($this->MasterView == '') {
-            // If this is a syndication request, use the appropriate master view
-            if ($this->SyndicationMethod == SYNDICATION_ATOM)
-               $this->MasterView = 'atom';
-            else if ($this->SyndicationMethod == SYNDICATION_RSS)
-               $this->MasterView = 'rss';
-            else
-               $this->MasterView = 'default'; // Otherwise go with the default
-         }
+         $this->MasterView = $this->MasterView();
 
          // Only get css & ui components if this is NOT a syndication request
          if ($this->SyndicationMethod == SYNDICATION_NONE && is_object($this->Head)) {
@@ -1394,7 +1421,7 @@ class Gdn_Controller extends Gdn_Pluggable {
 
             
             // And now search for/add all JS files
-            foreach ($this->_JsFiles as $JsInfo) {
+            foreach ($this->_JsFiles as $Index => $JsInfo) {
                $JsFile = $JsInfo['FileName'];
 
                if (strpos($JsFile, '//') !== FALSE) {
@@ -1450,6 +1477,9 @@ class Gdn_Controller extends Gdn_Pluggable {
 
                   $Options = (array)$JsInfo['Options'];
                   $Options['path'] = $JsPath;
+                  $Version = GetValue('Version', $JsInfo);
+                  if ($Version)
+                     TouchValue('version', $Options, $Version);
 
                   $this->Head->AddScript($JsSrc, 'text/javascript', $Options);
                }
@@ -1524,7 +1554,12 @@ class Gdn_Controller extends Gdn_Pluggable {
    public function SendHeaders() {
       // TODO: ALWAYS RENDER OR REDIRECT FROM THE CONTROLLER OR HEADERS WILL NOT BE SENT!! PUT THIS IN DOCS!!!
       foreach ($this->_Headers as $Name => $Value) {
-         header($Name.': '.$Value, TRUE);
+         if ($Name != 'Status')
+            header($Name.': '.$Value, TRUE);
+         else {
+            $Code = array_shift($Shift = explode(' ', $Value));
+            header($Name.': '.$Value, TRUE, $Code);
+         }
       }
       // Empty the collection after sending
       $this->_Headers = array();
@@ -1623,6 +1658,60 @@ class Gdn_Controller extends Gdn_Pluggable {
     */
    public function SetJson($Key, $Value = '') {
       $this->_Json[$Key] = $Value;
+   }
+   
+   public function StatusCode($StatusCode, $Message = NULL) {
+      if (is_null($Message)) {
+         switch ($StatusCode) {
+            case 100: $Message = 'Continue'; break;
+            case 101: $Message = 'Switching Protocols'; break;
+            
+            case 200: $Message = 'OK'; break;
+            case 201: $Message = 'Created'; break;
+            case 202: $Message = 'Accepted'; break;
+            case 203: $Message = 'Non-Authoritative Information'; break;
+            case 204: $Message = 'No Content'; break;
+            case 205: $Message = 'Reset Content'; break;
+            
+            case 300: $Message = 'Multiple Choices'; break;
+            case 301: $Message = 'Moved Permanently'; break;
+            case 302: $Message = 'Found'; break;
+            case 303: $Message = 'See Other'; break;
+            case 304: $Message = 'Not Modified'; break;
+            case 305: $Message = 'Use Proxy'; break;
+            case 307: $Message = 'Temporary Redirect'; break;
+         
+            case 400: $Message = 'Bad Request'; break;
+            case 401: $Message = 'Not Authorized'; break;
+            case 402: $Message = 'Payment Required'; break;
+            case 403: $Message = 'Forbidden'; break;
+            case 404: $Message = 'Not Found'; break;
+            case 405: $Message = 'Method Not Allowed'; break;
+            case 406: $Message = 'Not Acceptable'; break;
+            case 407: $Message = 'Proxy Authentication Required'; break;
+            case 408: $Message = 'Request Timeout'; break;
+            case 409: $Message = 'Conflict'; break;
+            case 410: $Message = 'Gone'; break;
+            case 411: $Message = 'Length Required'; break;
+            case 412: $Message = 'Precondition Failed'; break;
+            case 413: $Message = 'Request Entity Too Large'; break;
+            case 414: $Message = 'Request-URI Too Long'; break;
+            case 415: $Message = 'Unsupported Media Type'; break;
+            case 416: $Message = 'Requested Range Not Satisfiable'; break;
+            case 417: $Message = 'Expectation Failed'; break;
+            
+            case 500: $Message = 'Internal Server Error'; break;
+            case 501: $Message = 'Not Implemented'; break;
+            case 502: $Message = 'Bad Gateway'; break;
+            case 503: $Message = 'Service Unavailable'; break;
+            case 504: $Message = 'Gateway Timeout'; break;
+            case 505: $Message = 'HTTP Version Not Supported'; break;
+            
+            default: $Message = 'Unknown'; break;
+         }
+      }
+      $this->SetHeader('Status', "{$StatusCode} {$Message}");
+      return $Message;
    }
    
    /**

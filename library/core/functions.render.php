@@ -115,6 +115,18 @@ if (!function_exists('Img')) {
    }
 }
 
+if (!function_exists('IPAnchor')) {
+   /**
+    * Returns an IP address with a link to the user search.
+    */
+   function IPAnchor($IP, $CssClass = '') {
+      if ($IP)
+         return Anchor(htmlspecialchars($IP), '/user/browse?keywords='.urlencode($IP), $CssClass);
+      else
+         return $IP;
+   }
+}
+
 /**
  * English "plural" formatting.
  * This can be overridden in language definition files like:
@@ -132,13 +144,19 @@ if (!function_exists('Plural')) {
  * Takes a user object, and writes out an achor of the user's name to the user's profile.
  */
 if (!function_exists('UserAnchor')) {
-   function UserAnchor($User, $CssClass = '') {
-      $User = (object)$User;
+   function UserAnchor($User, $CssClass = '', $Options = NULL) {
+      static $NameUnique = NULL;
+      if ($NameUnique === NULL)
+         $NameUnique = C('Garden.Registration.NameUnique');
       
+      $Px = $Options;
+      $Name = GetValue($Px.'Name', $User, T('Unknown'));
+      $UserID = GetValue($Px.'UserID', $User, 0);
+
       if ($CssClass != '')
          $CssClass = ' class="'.$CssClass.'"';
 
-      return '<a href="'.Url('/profile/'.$User->UserID.'/'.urlencode($User->Name)).'"'.$CssClass.'>'.$User->Name.'</a>';
+      return '<a href="'.htmlspecialchars(Url('/profile/'.($NameUnique ? '' : "$UserID/").rawurlencode($Name))).'"'.$CssClass.'>'.htmlspecialchars($Name).'</a>';
    }
 }
 
@@ -157,6 +175,7 @@ if (!function_exists('UserBuilder')) {
       $User->UserID = $Object->$UserID;
       $User->Name = $Object->$Name;
       $User->Photo = property_exists($Object, $Photo) ? $Object->$Photo : '';
+      $User->Email = GetValue($UserPrefix.'Email', $Object, NULL);
 		return $User;
    }
 }
@@ -174,11 +193,16 @@ if (!function_exists('UserPhoto')) {
       $ImgClass = GetValue('ImageClass', $Options, 'ProfilePhotoBig');
       
       $LinkClass = $LinkClass == '' ? '' : ' class="'.$LinkClass.'"';
-      if ($User->Photo) {
-         if (!preg_match('`^https?://`i', $User->Photo)) {
-            $PhotoUrl = Gdn_Upload::Url(ChangeBasename($User->Photo, 'n%s'));
+
+      $Photo = $User->Photo;
+      if (!$Photo && function_exists('UserPhotoDefaultUrl'))
+         $Photo = UserPhotoDefaultUrl($User);
+
+      if ($Photo) {
+         if (!preg_match('`^https?://`i', $Photo)) {
+            $PhotoUrl = Gdn_Upload::Url(ChangeBasename($Photo, 'n%s'));
          } else {
-            $PhotoUrl = $User->Photo;
+            $PhotoUrl = $Photo;
          }
          
          return '<a title="'.htmlspecialchars($User->Name).'" href="'.Url('/profile/'.$User->UserID.'/'.rawurlencode($User->Name)).'"'.$LinkClass.'>'
@@ -189,6 +213,23 @@ if (!function_exists('UserPhoto')) {
       }
    }
 }
+
+if (!function_exists('UserUrl')) {
+   /**
+    * Return the url for a user.
+    * @param array|object $User The user to get the url for.
+    * @return string The url suitable to be passed into the Url() function.
+    */
+   function UserUrl($User) {
+      static $NameUnique = NULL;
+      if ($NameUnique === NULL)
+         $NameUnique = C('Garden.Registration.NameUnique');
+      
+      return '/profile/'.($NameUnique ? '' : GetValue('UserID', $User, 0).'/').rawurlencode(GetValue('Name', $User));
+   }
+}
+
+
 /**
  * Wrap the provided string in the specified tag. ie. Wrap('This is bold!', 'b');
  */

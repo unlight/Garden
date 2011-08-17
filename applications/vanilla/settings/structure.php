@@ -20,6 +20,8 @@ $Construct->Table('Category');
 $CategoryExists = $Construct->TableExists();
 $PermissionCategoryIDExists = $Construct->ColumnExists('PermissionCategoryID');
 
+$LastDiscussionIDExists = $Construct->ColumnExists('LastDiscussionID');
+
 $Construct->PrimaryKey('CategoryID')
    ->Column('ParentCategoryID', 'int', TRUE)
    ->Column('TreeLeft', 'int', TRUE)
@@ -39,7 +41,8 @@ $Construct->PrimaryKey('CategoryID')
    ->Column('UpdateUserID', 'int', TRUE)
    ->Column('DateInserted', 'datetime')
    ->Column('DateUpdated', 'datetime')
-   ->Column('LastCommentID', 'int', TRUE)
+   ->Column('LastCommentID', 'int', NULL)
+   ->Column('LastDiscussionID', 'int', NULL)
    ->Set($Explicit, $Drop);
 
 $RootCategoryInserted = FALSE;
@@ -48,7 +51,7 @@ if ($SQL->GetWhere('Category', array('CategoryID' => -1))->NumRows() == 0) {
    $RootCategoryInserted = TRUE;
 }
 
-if ($Drop) {
+if ($Drop || !$CategoryExists) {
    $SQL->Insert('Category', array('ParentCategoryID' => -1, 'TreeLeft' => 2, 'TreeRight' => 3, 'InsertUserID' => 1, 'UpdateUserID' => 1, 'DateInserted' => Gdn_Format::ToDateTime(), 'DateUpdated' => Gdn_Format::ToDateTime(), 'Name' => 'General', 'UrlCode' => 'general', 'Description' => 'General discussions', 'PermissionCategoryID' => -1));
 } elseif ($CategoryExists && !$PermissionCategoryIDExists) {
    if (!C('Garden.Permissions.Disabled.Category')) {
@@ -396,4 +399,12 @@ foreach ($Categories as $Category) {
       'Category',
       array('UrlCode' => $UrlCode),
       array('CategoryID' => $Category['CategoryID']));
+}
+
+// Moved this down here because it needs to run after GDN_Comment is created
+if (!$LastDiscussionIDExists) {
+   $SQL->Update('Category c')
+      ->Join('Comment cm', 'c.LastCommentID = cm.CommentID')
+      ->Set('c.LastDiscussionID', 'cm.DiscussionID', FALSE, FALSE)
+      ->Put();
 }

@@ -122,6 +122,7 @@ class Gdn_Validation {
       $this->AddRule('WebAddress', 'function:ValidateWebAddress');
       $this->AddRule('Username', 'function:ValidateUsername');
       $this->AddRule('UrlString', 'function:ValidateUrlString');
+      $this->AddRule('UrlStringRelaxed', 'function:ValidateUrlStringRelaxed');
       $this->AddRule('Date', 'function:ValidateDate');
       $this->AddRule('Integer', 'function:ValidateInteger');
       $this->AddRule('Boolean', 'function:ValidateBoolean');
@@ -586,5 +587,21 @@ class Gdn_Validation {
          $this->_ValidationResults = array();
       
       return $this->_ValidationResults;
+   }
+   
+   public function ResultsText() {
+      $Errors = array();
+      foreach ($this->Results() as $Name => $Value) {
+         if (is_array($Value)) {
+            foreach ($Value as $Code) {
+               $Errors[] = sprintf(T($Code), T($Name));
+            }
+         } else {
+            $Errors[] = sprintf(T($Value), T($Name));
+         }
+      }
+      
+      $Result = implode('. ', $Errors);
+      return $Result;
    }
 }

@@ -679,9 +679,14 @@ class SettingsController extends DashboardController {
       $this->Render();
    }
 
-   public static function SortAddons(&$Array) {
+   public static function SortAddons(&$Array, $Filter = TRUE) {
       // Make sure every addon has a name.
       foreach ($Array as $Key => $Value) {
+         if ($Filter && GetValue('Hidden', $Value)) {
+            unset($Array[$Key]);
+            continue;
+         }
+
          $Name = GetValue('Name', $Value, $Key);
          SetValue('Name', $Array[$Key], $Name);
       }
@@ -743,25 +748,20 @@ class SettingsController extends DashboardController {
             // Save the styles to the config.
             $StyleKey = $this->Form->GetFormValue('StyleKey');
 
-            SaveToConfig(array(
+            $ConfigSaveData = array(
                'Garden.ThemeOptions.Styles.Key' => $StyleKey,
-               'Garden.ThemeOptions.Styles.Value' => $this->Data("ThemeInfo.Options.Styles.$StyleKey.Basename")));
+               'Garden.ThemeOptions.Styles.Value' => $this->Data("ThemeInfo.Options.Styles.$StyleKey.Basename"));
+            
             // Save the text to the locale.
             $Translations = array();
             foreach ($this->Data('ThemeInfo.Options.Text', array()) as $Key => $Default) {
                $Value = $this->Form->GetFormValue($this->Form->EscapeString('Text_'.$Key));
-               $Translations['Theme_'.$Key] = $Value;
+               $ConfigSaveData["ThemeOption.{$Key}"] = $Value;
                //$this->Form->SetFormValue('Text_'.$Key, $Value);
             }
-            if (count($Translations) > 0) {
-               try {
-                  Gdn::Locale()->SaveTranslations($Translations);
-                  Gdn::Locale()->Refresh();
-               } catch (Exception $Ex) {
-                  $this->Form->AddError($Ex);
-               }
-            }
 
+            SaveToConfig($ConfigSaveData);
+            
             $this->InformMessage(T("Your changes have been saved."));
          } elseif ($Style) {
             SaveToConfig(array(
@@ -775,7 +775,7 @@ class SettingsController extends DashboardController {
          if (!$this->Form->IsPostBack()) {
             foreach ($this->Data('ThemeInfo.Options.Text', array()) as $Key => $Options) {
                $Default = GetValue('Default', $Options, '');
-               $Value = T('Theme_'.$Key, '#DEFAULT#');
+               $Value = C("ThemeOption.{$Key}", '#DEFAULT#');
                if ($Value === '#DEFAULT#')
                   $Value = $Default;
 
@@ -898,7 +898,7 @@ class SettingsController extends DashboardController {
       $Session = Gdn::Session();
       if ($Session->ValidateTransientKey($TransientKey) && $Session->CheckPermission($RequiredPermission)) {
          try {
-            if (array_key_exists($Name, $Manager->$Enabled) === FALSE) {
+            if (array_key_exists($Name, $Manager->$Enabled()) === FALSE) {
                $Manager->$Remove($Name);
             }
          } catch (Exception $e) {
