@@ -1,20 +1,19 @@
 <?php if (!defined('APPLICATION')) exit();
-/*
-Copyright 2008, 2009 Vanilla Forums Inc.
-This file is part of Garden.
-Garden is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
-Garden is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
-You should have received a copy of the GNU General Public License along with Garden.  If not, see <http://www.gnu.org/licenses/>.
-Contact Vanilla Forums Inc. at support [at] vanillaforums [dot] com
-*/
 
 /**
- * Garden.Core
- */
-
-/**
+ * Theme manager
+ * 
  * Manages available themes, enabling and disabling them.
+ * 
+ * @author Mark O'Sullivan <markm@vanillaforums.com>
+ * @author Todd Burry <todd@vanillaforums.com> 
+ * @author Tim Gunter <tim@vanillaforums.com>
+ * @copyright 2003 Vanilla Forums, Inc
+ * @license http://www.opensource.org/licenses/gpl-2.0.php GPL
+ * @package Garden
+ * @since 2.0
  */
+
 class Gdn_ThemeManager extends Gdn_Pluggable {
    
    /**
@@ -60,7 +59,6 @@ class Gdn_ThemeManager extends Gdn_Pluggable {
     * a "Folder" definition to the Theme Info Array for each.
     */
    public function AvailableThemes($Force = FALSE) {
-      
       if (is_null($this->ThemeCache) || $Force) {
       
          $this->ThemeCache = array();
@@ -71,7 +69,7 @@ class Gdn_ThemeManager extends Gdn_Pluggable {
             
             // Check Cache
             $SearchPathCacheKey = 'Garden.Themes.PathCache.'.$SearchPath;
-            $SearchPathCache = Gdn::Cache()->Get($SearchPathCacheKey);
+            $SearchPathCache = Gdn::Cache()->Get($SearchPathCacheKey, array(Gdn_Cache::FEATURE_NOPREFIX => TRUE));
             
             $CacheHit = ($SearchPathCache !== Gdn_Cache::CACHEOP_FAILURE);
             if ($CacheHit && is_array($SearchPathCache)) {
@@ -99,7 +97,7 @@ class Gdn_ThemeManager extends Gdn_Pluggable {
                   continue;
                
                $SearchPathCache['CacheIntegrityHash'] = $PathIntegrityHash;
-               Gdn::Cache()->Store($SearchPathCacheKey, $SearchPathCache);
+               Gdn::Cache()->Store($SearchPathCacheKey, $SearchPathCache, array(Gdn_Cache::FEATURE_NOPREFIX => TRUE));
             }
             
             $this->ThemeCache = array_merge($this->ThemeCache, $CacheThemeInfo);
@@ -130,6 +128,10 @@ class Gdn_ThemeManager extends Gdn_Pluggable {
             
          $ThemeAboutFile = GetValue('about', $ThemeFiles);
          $SearchThemeInfo = $this->ScanThemeFile($ThemeAboutFile);
+         
+         // Don't index archived themes.
+//         if (GetValue('Archived', $SearchThemeInfo, FALSE))
+//            continue;
          
          // Add the screenshot.
          if (array_key_exists('screenshot', $ThemeFiles)) {
@@ -181,7 +183,6 @@ class Gdn_ThemeManager extends Gdn_Pluggable {
          $this->AlternateThemeSearchPaths = array();
 
          // Add default search path(s) to list
-         $this->ThemeSearchPaths[rtrim(PATH_LOCAL_THEMES,'/')] = 'local';
          $this->ThemeSearchPaths[rtrim(PATH_THEMES,'/')] = 'core';
 
                   // Check for, and load, alternate search paths from config
@@ -288,8 +289,9 @@ class Gdn_ThemeManager extends Gdn_Pluggable {
          if (!array_key_exists('Name', ${$VariableName}[$Item]))
             ${$VariableName}[$Item]['Name'] = $Item;
             
-         if (!array_key_exists('Folder', ${$VariableName}[$Item]))
-            ${$VariableName}[$Item]['Folder'] = $Item;
+         if (!array_key_exists('Folder', ${$VariableName}[$Item])) {
+            ${$VariableName}[$Item]['Folder'] = basename(dirname($ThemeFile));
+         }
          
          return ${$VariableName}[$Item];
       } elseif ($VariableName !== NULL) {

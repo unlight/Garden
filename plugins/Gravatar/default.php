@@ -4,7 +4,7 @@
 $PluginInfo['Gravatar'] = array(
    'Name' => 'Gravatar',
    'Description' => 'Implements Gravatar avatars for all users who have not uploaded their own custom profile picture & icon.',
-   'Version' => '1.3',
+   'Version' => '1.4.1',
    'Author' => "Mark O'Sullivan",
    'AuthorEmail' => 'mark@vanillaforums.com',
    'AuthorUrl' => 'http://vanillaforums.com',
@@ -14,76 +14,45 @@ $PluginInfo['Gravatar'] = array(
 // 1.1 Fixes - Used GetValue to retrieve array props instead of direct references
 // 1.2 Fixes - Make Gravatar work with the mobile theme
 // 1.3 Fixes - Changed UserBuilder override to also accept an array of user info
+// 1.4 Change - Lets you chain Vanillicon as the default by setting Plugins.Gravatar.UseVanillicon in config.
 
 class GravatarPlugin extends Gdn_Plugin {
-   
-   // Find all the places where UserBuilder is called, and make sure that there
-   // is a related $UserPrefix.'Email' field pulled from the database.
-   public function AddonCommentModel_BeforeGet_Handler(&$Sender) {
-      $Sender->SQL->Select('iu.Email', '', 'InsertEmail');
-   }
-   public function ConversationModel_BeforeGet_Handler(&$Sender) {
-      $Sender->SQL->Select('lmu.Email', '', 'LastMessageEmail');
-   }
-   public function ConversationMessageModel_BeforeGet_Handler(&$Sender) {
-      $Sender->SQL->Select('iu.Email', '', 'InsertEmail');
-   }
-   public function ActivityModel_BeforeGet_Handler(&$Sender) {
-      $Sender->SQL
-         ->Select('au.Email', '', 'ActivityEmail')
-         ->Select('ru.Email', '', 'RegardingEmail');
-   }
-	public function ActivityModel_BeforeGetNotifications_Handler(&$Sender) {
-      $Sender->SQL
-         ->Select('au.Email', '', 'ActivityEmail')
-         ->Select('ru.Email', '', 'RegardingEmail');
-	}
-   public function ActivityModel_BeforeGetComments_Handler(&$Sender) {
-      $Sender->SQL->Select('au.Email', '', 'ActivityEmail');
-   }
-   public function UserModel_BeforeGetActiveUsers_Handler(&$Sender) {
-      $Sender->SQL->Select('u.Email');
-   }
-	
-	public function DiscussionModel_BeforeGetID_Handler(&$Sender) {
-		$Sender->SQL->Select('iu.Email', '', 'InsertEmail');
-	}
-	
-   public function CommentModel_BeforeGet_Handler(&$Sender) {
-      $Sender->SQL->Select('iu.Email', '', 'InsertEmail');
-   }
+   public function ProfileController_AfterAddSideMenu_Handler($Sender, $Args) {
+      if (!$Sender->User->Photo) {
+         $Email = GetValue('Email', $Sender->User);
+         $HTTPS = GetValue('HTTPS', $_SERVER, '');
+         $Protocol =  (strlen($HTTPS) || GetValue('SERVER_PORT', $_SERVER) == 443) ? 'https://secure.' : 'http://www.';
 
-   public function CommentModel_BeforeGetNew_Handler(&$Sender) {
-      $Sender->SQL->Select('iu.Email', '', 'InsertEmail');
-   }
+         $Url = $Protocol.'gravatar.com/avatar.php?'
+            .'gravatar_id='.md5(strtolower($Email))
+            .'&amp;size='.C('Garden.Profile.MaxWidth', 200);
 
-   public function Setup() {
-      // No setup required.
+         if (C('Plugins.Gravatar.UseVanillicon', TRUE))
+            $Url .= '&amp;default='.urlencode(Asset('http://vanillicon.com/'.md5($Email).'_200.png'));
+         else
+            $Url .= '&amp;default='.urlencode(Asset(C('Plugins.Gravatar.DefaultAvatar', 'plugins/Gravatar/default_250.png'), TRUE));
+
+      
+         $Sender->User->Photo = $Url;
+      }
    }
 }
 
-if (!function_exists('UserBuilder')) {
-   /**
-    * Override the default UserBuilder function with one that switches the photo
-    * out with a gravatar url if the photo is empty.
-    */
-   function UserBuilder($Object, $UserPrefix = '') {
-		$Object = (object)$Object;
-      $User = new stdClass();
-      $UserID = $UserPrefix.'UserID';
-      $Name = $UserPrefix.'Name';
-      $Photo = $UserPrefix.'Photo';
-      $Email = $UserPrefix.'Email';
-      $User->UserID = $Object->$UserID;
-      $User->Name = $Object->$Name;
-      $User->Photo = property_exists($Object, $Photo) ? $Object->$Photo : '';
-      $Protocol =  (strlen(GetValue('HTTPS', $_SERVER, 'No')) != 'No' || GetValue('SERVER_PORT', $_SERVER) == 443) ? 'https://secure.' : 'http://www.';
-      if ($User->Photo == '' && property_exists($Object, $Email)) {
-         $User->Photo = $Protocol.'gravatar.com/avatar.php?'
-            .'gravatar_id='.md5(strtolower($Object->$Email))
-            .'&amp;default='.urlencode(Asset(Gdn::Config('Plugins.Gravatar.DefaultAvatar', 'plugins/Gravatar/default.gif'), TRUE))
-            .'&amp;size='.Gdn::Config('Garden.Thumbnail.Width', 40);
-      }
-		return $User;
+if (!function_exists('UserPhotoDefaultUrl')) {
+   function UserPhotoDefaultUrl($User) {
+      $Email = GetValue('Email', $User);
+      $HTTPS = GetValue('HTTPS', $_SERVER, '');
+      $Protocol =  (strlen($HTTPS) || GetValue('SERVER_PORT', $_SERVER) == 443) ? 'https://secure.' : 'http://www.';
+
+      $Url = $Protocol.'gravatar.com/avatar.php?'
+         .'gravatar_id='.md5(strtolower($Email))
+         .'&amp;size='.C('Garden.Thumbnail.Width', 50);
+         
+      if (C('Plugins.Gravatar.UseVanillicon', TRUE))
+         $Url .= '&amp;default='.urlencode(Asset('http://vanillicon.com/'.md5($Email).'.png'));
+      else
+         $Url .= '&amp;default='.urlencode(Asset(C('Plugins.Gravatar.DefaultAvatar', 'plugins/Gravatar/default.png'), TRUE));
+      
+      return $Url;
    }
 }

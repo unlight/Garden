@@ -7,14 +7,28 @@ Garden is distributed in the hope that it will be useful, but WITHOUT ANY WARRAN
 You should have received a copy of the GNU General Public License along with Garden.  If not, see <http://www.gnu.org/licenses/>.
 Contact Vanilla Forums Inc. at support [at] vanillaforums [dot] com
 */
-
 /**
- * Dashboard Setup Controller
+ * Setup Controller
+ *
+ * @package Dashboard
+ */
+ 
+/**
+ * Manages installation of Dashboard.
+ *
+ * @since 2.0.0
+ * @package Dashboard
  */
 class SetupController extends DashboardController {
-   
+   /** @var array Models to automatically instantiate. */
    public $Uses = array('Form', 'Database');
-   	
+   
+   /**
+    * Add CSS & module, set error master view. Automatically run on every use.
+    *
+    * @since 2.0.0
+    * @access public
+    */
    public function Initialize() {
       $this->Head = new HeadModule($this);
       $this->AddCssFile('setup.css');
@@ -23,18 +37,24 @@ class SetupController extends DashboardController {
    }
    
    /**
-    * The summary of all settings available. The menu items displayed here are
-    * collected from each application's application controller and all plugin's
-    * definitions.
+    * The summary of all settings available. 
+    *
+    * The menu items displayed here are collected from each application's 
+    * application controller and all plugin's definitions.
+    *
+    * @since 2.0.0
+    * @access public
     */
    public function Index() {
       $this->ApplicationFolder = 'dashboard';
       $this->MasterView = 'setup';
       // Fatal error if Garden has already been installed.
-      
-      $Installed = Gdn::Config('Garden.Installed') ? TRUE : FALSE;
-      if ($Installed)
-         throw new Exception('Vanilla has already been installed.');
+      $Installed = C('Garden.Installed');
+      if ($Installed) {
+         $this->View = "AlreadyInstalled";
+         $this->Render();
+         return;
+      }
       
       if (!$this->_CheckPrerequisites()) {
          $this->View = 'prerequisites';
@@ -81,9 +101,12 @@ class SetupController extends DashboardController {
    /**
     * Allows the configuration of basic setup information in Garden. This
     * should not be functional after the application has been set up.
+    *
+    * @since 2.0.0
+    * @access public
+    * @param string $RedirectUrl Where to send user afterward.
     */
    public function Configure($RedirectUrl = '') {
-      
       // Create a model to save configuration settings
       $Validation = new Gdn_Validation();
       $ConfigurationModel = new Gdn_ConfigurationModel($Validation);
@@ -233,6 +256,13 @@ class SetupController extends DashboardController {
       return $this->Form->ErrorCount() == 0 ? TRUE : FALSE;
    }
    
+   /**
+    * Check minimum requirements for Garden.
+    *
+    * @since 2.0.0
+    * @access private
+    * @return bool Whether platform passes requirement check.
+    */
    private function _CheckPrerequisites() {
       // Make sure we are running at least PHP 5.1
       if (version_compare(phpversion(), ENVIRONMENT_PHP_VERSION) < 0)
@@ -250,14 +280,14 @@ class SetupController extends DashboardController {
 
       // Make sure the appropriate folders are writeable.
       $ProblemDirectories = array();
-      if (!is_readable(PATH_LOCAL_CONF) || !IsWritable(PATH_LOCAL_CONF))
-         $ProblemDirectories[] = PATH_LOCAL_CONF;
+      if (!is_readable(PATH_CONF) || !IsWritable(PATH_CONF))
+         $ProblemDirectories[] = PATH_CONF;
          
-      if (!is_readable(PATH_LOCAL_UPLOADS) || !IsWritable(PATH_LOCAL_UPLOADS))
-         $ProblemDirectories[] = PATH_LOCAL_UPLOADS;
+      if (!is_readable(PATH_UPLOADS) || !IsWritable(PATH_UPLOADS))
+         $ProblemDirectories[] = PATH_UPLOADS;
          
-      if (!is_readable(PATH_LOCAL_CACHE) || !IsWritable(PATH_LOCAL_CACHE))
-         $ProblemDirectories[] = PATH_LOCAL_CACHE;
+      if (!is_readable(PATH_CACHE) || !IsWritable(PATH_CACHE))
+         $ProblemDirectories[] = PATH_CACHE;
 
       if (count($ProblemDirectories) > 0) {
          $PermissionProblem = TRUE;
@@ -273,7 +303,7 @@ class SetupController extends DashboardController {
       
       // Make sure the config folder is writeable
       if (!$PermissionProblem) {
-         $ConfigFile = PATH_LOCAL_CONF.DS.'config.php';
+         $ConfigFile = PATH_CONF.'/config.php';
          if (!file_exists($ConfigFile))
             file_put_contents($ConfigFile, '');
          
@@ -286,9 +316,9 @@ class SetupController extends DashboardController {
 
       // Make sure the cache folder is writeable
       if (!$PermissionProblem) {
-         if (!file_exists(PATH_LOCAL_CACHE.DS.'Smarty')) mkdir(PATH_LOCAL_CACHE.DS.'Smarty');
-         if (!file_exists(PATH_LOCAL_CACHE.DS.'Smarty'.DS.'cache')) mkdir(PATH_LOCAL_CACHE.DS.'Smarty'.DS.'cache');
-         if (!file_exists(PATH_LOCAL_CACHE.DS.'Smarty'.DS.'compile')) mkdir(PATH_LOCAL_CACHE.DS.'Smarty'.DS.'compile');
+         if (!file_exists(PATH_CACHE.'/Smarty')) mkdir(PATH_CACHE.'/Smarty');
+         if (!file_exists(PATH_CACHE.'/Smarty/cache')) mkdir(PATH_CACHE.'/Smarty/cache');
+         if (!file_exists(PATH_CACHE.'/Smarty/compile')) mkdir(PATH_CACHE.'/Smarty/compile');
       }
 			
       return $this->Form->ErrorCount() == 0 ? TRUE : FALSE;

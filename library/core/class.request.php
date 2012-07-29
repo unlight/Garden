@@ -1,14 +1,8 @@
 <?php if (!defined('APPLICATION')) exit();
-/*
-Copyright 2008, 2009 Vanilla Forums Inc.
-This file is part of Garden.
-Garden is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
-Garden is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
-You should have received a copy of the GNU General Public License along with Garden.  If not, see <http://www.gnu.org/licenses/>.
-Contact Vanilla Forums Inc. at support [at] vanillaforums [dot] com
-*/
 
 /**
+ * Incoming request parser
+ *
  * Represents a Request to the application, typically from the browser but potentially generated internally, in a format
  * that can be accessed directly by the Dispatcher.
  *
@@ -18,11 +12,14 @@ Contact Vanilla Forums Inc. at support [at] vanillaforums [dot] com
  * @method string RequestHost($URI = NULL) Get/Set the Request Host (HTTP_HOST).
  * @method string RequestFolder($URI = NULL) Get/Set the Request script's Folder.
  *
- * @author Tim Gunter
+ * @author Todd Burry <todd@vanillaforums.com> 
+ * @author Tim Gunter <tim@vanillaforums.com>
+ * @copyright 2003 Vanilla Forums, Inc
+ * @license http://www.opensource.org/licenses/gpl-2.0.php GPL
  * @package Garden
- * @version @@GARDEN-VERSION@@
- * @namespace Garden.Core
+ * @since 2.0
  */
+
 class Gdn_Request {
 
    const INPUT_CUSTOM   = "custom";
@@ -81,6 +78,7 @@ class Gdn_Request {
     *  - HOST     -> HTTP_HOST
     *  - METHOD   -> REQUEST_METHOD
     *  - FOLDER   -> none. this is extracted from SCRIPT_NAME and only available after _ParseRequest()
+    *  - SCHEME   -> none. this is derived from 'HTTPS' and 'X-Forwarded-Proto'
     *
     * @param $Key Key to retrieve or set.
     * @param $Value Value of $Key key to set.
@@ -98,8 +96,11 @@ class Gdn_Request {
             case 'SCRIPT':
                $Value = !is_null($Value) ? trim($Value, '/') : $Value;
                break;
-            case 'SCHEME':
             case 'HOST':
+               $HostParts = explode(':', $Value);
+               $Value = array_shift($HostParts);
+               break;
+            case 'SCHEME':
             case 'METHOD':
             case 'FOLDER':
             default:
@@ -235,29 +236,7 @@ class Gdn_Request {
     * @return mixed
     */
    public function GetValue($Key, $Default = FALSE) {
-      $QueryOrder = array(
-         self::INPUT_CUSTOM,
-         self::INPUT_GET,
-         self::INPUT_POST,
-         self::INPUT_FILES,
-         self::INPUT_SERVER,
-         self::INPUT_ENV,
-         self::INPUT_COOKIES
-      );
-      $NumDataTypes = sizeof($QueryOrder);
-      
-      for ($i=0; $i < $NumDataTypes; $i++) {
-         $DataType = $QueryOrder[$i];
-         if (!array_key_exists($DataType, $this->_RequestArguments)) continue;
-         if (array_key_exists($Key, $this->_RequestArguments[$DataType])) {
-            $Data = $this->_RequestArguments[$DataType][$Key];
-            if (is_array($Data) || is_object($Data))
-               return $Data;
-            else
-               return filter_var($Data, FILTER_SANITIZE_STRING);
-         }
-      }
-      return $Default;
+      return $this->Merged($Key, $Default);
    }
    
    /**
@@ -277,7 +256,7 @@ class Gdn_Request {
          if (is_array($Val) || is_object($Val))
             return $Val;
          else
-            return filter_var($Val, FILTER_SANITIZE_STRING);
+            return $Val;
       }
       return $Default;
    }
@@ -295,6 +274,10 @@ class Gdn_Request {
 
    public function IpAddress() {
       return $this->GetValue('REMOTE_ADDR');
+   }
+   
+   public function IsPostBack() {
+      return strcasecmp($this->RequestMethod(), 'post') == 0;
    }
 
    /**
@@ -319,11 +302,18 @@ class Gdn_Request {
     */
    protected function _LoadEnvironment() {
       $this->_EnvironmentElement('ConfigWebRoot', Gdn::Config('Garden.WebRoot'));
-      $this->_EnvironmentElement('ConfigStrips', Gdn::Config('Garden.StripWebRoot', FALSE));
+      $this->_EnvironmentElement('ConfigStripUrls', Gdn::Config('Garden.StripWebRoot', FALSE));
 
-      $this->RequestHost(     isset($_SERVER['HTTP_HOST']) ? ArrayValue('HTTP_HOST',$_SERVER) : ArrayValue('SERVER_NAME',$_SERVER));
+      $this->RequestHost(     isset($_SERVER['HTTP_X_FORWARDED_HOST']) ? ArrayValue('HTTP_X_FORWARDED_HOST',$_SERVER) : (isset($_SERVER['HTTP_HOST']) ? ArrayValue('HTTP_HOST',$_SERVER) : ArrayValue('SERVER_NAME',$_SERVER)));
       $this->RequestMethod(   isset($_SERVER['REQUEST_METHOD']) ? ArrayValue('REQUEST_METHOD',$_SERVER) : 'CONSOLE');
-      $this->RequestScheme(   (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] == 'on') ? 'https' : 'http');
+      
+      $Scheme = 'http';
+      // Webserver-originated SSL
+      if (isset($_SERVER['HTTPS']) && strtolower($_SERVER['HTTPS']) == 'on') $Scheme = 'https';
+      // Loadbalancer-originated (and terminated) SSL
+      if (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower($_SERVER['HTTP_X_FORWARDED_PROTO']) == 'https') $Scheme = 'https';
+      
+      $this->RequestScheme($Scheme);
       
       if (is_array($_GET)) {
          $Get = FALSE;
@@ -592,9 +582,9 @@ class Gdn_Request {
    }
 
    /**
-    * Get a value from the post array or return the entire post array.
+    * Get a value from the post array or return the entire POST array.
     *
-    * @param string|null $Key The key of the post item or null to return the entire post array.
+    * @param string|null $Key The key of the post item or null to return the entire array.
     * @param mixed $Default The value to return if the item isn't set.
     * @return mixed
     */
@@ -616,6 +606,34 @@ class Gdn_Request {
             'Domain'             => ''
       );
       $this->_LoadEnvironment();
+   }
+   
+   /**
+    * Get a value from the merged param array or return the entire merged array
+    *
+    * @param string|null $Key The key of the post item or null to return the entire array.
+    * @param mixed $Default The value to return if the item isn't set.
+    * @return mixed
+    */
+   public function Merged($Key = NULL, $Default = NULL) {
+      $Merged = array();
+      $QueryOrder = array(
+         self::INPUT_CUSTOM,
+         self::INPUT_GET,
+         self::INPUT_POST,
+         self::INPUT_FILES,
+         self::INPUT_SERVER,
+         self::INPUT_ENV,
+         self::INPUT_COOKIES
+      );
+      $NumDataTypes = sizeof($QueryOrder);
+      for ($i=$NumDataTypes; $i > 0; $i--) {
+         $DataType = $QueryOrder[$i-1];
+         if (!array_key_exists($DataType, $this->_RequestArguments)) continue;
+         $Merged = array_merge($Merged, $this->_RequestArguments[$DataType]);
+      }
+      
+      return (is_null($Key)) ? $Merged : GetValue($Key, $Merged, $Default);
    }
    
    /**
@@ -657,6 +675,10 @@ class Gdn_Request {
       
       }
       $this->_RequestArguments[$ParamsType] = $ArgumentData;
+   }
+   
+   public function SetRequestArguments($ParamsType, $ParamsData) {
+      $this->_RequestArguments[$ParamsType] = $ParamsData;
    }
    
    public function SetValueOn($ParamType, $ParamName, $ParamValue) {
@@ -713,12 +735,10 @@ class Gdn_Request {
       } else {
          $Scheme = $this->Scheme();
       }
-      
-      if (strpos($Path, '://') !== FALSE)
+      if (in_array(strpos($Path, '://'), array(4, 5))) // Accounts for http:// and https:// - some querystring params may have "://", and this would cause things to break.
          return $Path;
 
       $Parts = array();
-
       if ($WithDomain) {
          $Parts[] = $Scheme.'://'.$this->Host();
       } else
@@ -744,7 +764,7 @@ class Gdn_Request {
 
       if($Path == '') {
          $PathParts = explode('/', $this->Path());
-         $PathParts = array_map('urlencode', $PathParts);
+         $PathParts = array_map('rawurlencode', $PathParts);
          $Path = implode('/', $PathParts);
          // Grab the get parameters too.
          if (!$Query) {
@@ -755,7 +775,7 @@ class Gdn_Request {
                unset($Query);
          }
       }
-      $Parts[] = trim($Path, '/');
+      $Parts[] = ltrim($Path, '/');
 
       $Result = implode('/', $Parts);
       
@@ -858,6 +878,11 @@ class Gdn_Request {
    
    public function WithDeliveryType($DeliveryType) {
       $this->SetValueOn(self::INPUT_GET, 'DeliveryType', $DeliveryType);
+      return $this;
+   }
+   
+   public function WithDeliveryMethod($DeliveryMethod) {
+      $this->SetValueOn(self::INPUT_GET, 'DeliveryMethod', $DeliveryMethod);
       return $this;
    }
    

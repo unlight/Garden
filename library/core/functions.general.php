@@ -1,100 +1,60 @@
 <?php if (!defined('APPLICATION')) exit();
-/*
-Copyright 2008, 2009 Vanilla Forums Inc.
-This file is part of Garden.
-Garden is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
-Garden is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
-You should have received a copy of the GNU General Public License along with Garden.  If not, see <http://www.gnu.org/licenses/>.
-Contact Vanilla Forums Inc. at support [at] vanillaforums [dot] com
-*/
+
+/**
+ * General functions
+ *
+ * @author Mark O'Sullivan <markm@vanillaforums.com>
+ * @author Todd Burry <todd@vanillaforums.com> 
+ * @author Tim Gunter <tim@vanillaforums.com>
+ * @copyright 2003 Vanilla Forums, Inc
+ * @license http://www.opensource.org/licenses/gpl-2.0.php GPL
+ * @package Garden
+ * @since 2.0
+ */
 
 include PATH_LIBRARY.'/vendors/wordpress/functions.wordpress.php';
 
-/*
-function Gdn_Autoload($ClassName) {
-   if (!class_exists('Gdn_FileSystem', FALSE))
-      return false;
+if (!function_exists('AbsoluteSource')) {
+   /**
+    * Takes a source path (ie. an image src from an html page), and an
+    * associated URL (ie. the page that the image appears on), and returns the
+    * absolute source (including url & protocol) path.
+    * @param string $SrcPath The source path to make absolute (if not absolute already).
+    * @param string $Url The full url to the page containing the src reference.
+    * @return string Absolute source path.
+    */
+   function AbsoluteSource($SrcPath, $Url) {
+      // If there is a scheme in the srcpath already, just return it.
+      if (!is_null(parse_url($SrcPath, PHP_URL_SCHEME)))
+         return $SrcPath;
       
-   if (!class_exists('Gdn_LibraryMap', FALSE))
-      return false;
-
-   if (!class_exists('Gdn', FALSE))
-      return false;
+      // Does SrcPath assume root?
+      if (in_array(substr($SrcPath, 0, 1), array('/', '\\')))
+         return parse_url($Url, PHP_URL_SCHEME)
+         .'://'
+         .parse_url($Url, PHP_URL_HOST)
+         .$SrcPath;
    
-   if (substr($ClassName, 0, 4) === 'Gdn_')
-      $LibraryFileName = 'class.' . strtolower(substr($ClassName, 4)) . '.php';
-   else
-      $LibraryFileName = 'class.' . strtolower($ClassName) . '.php';
-   
-   if (!is_null($ApplicationManager = Gdn::Factory('ApplicationManager')))
-      $ApplicationWhiteList = Gdn::Factory('ApplicationManager')->EnabledApplicationFolders();
-   else
-      $ApplicationWhiteList = NULL;
-   
-   // If we're turning on an application, temporarily allow it in the autoloader
-   $TemporaryAppFolders = C('TemporaryApplications', FALSE);
-   if ($TemporaryAppFolders !== FALSE && is_array($TemporaryAppFolders) && sizeof($TemporaryAppFolders))
-      $ApplicationWhiteList = array_flip(array_flip(array_merge($ApplicationWhiteList, $TemporaryAppFolders)));
-      
-   $LibraryPath = FALSE;
-
-   if (Gdn::PluginManager() instanceof Gdn_PluginManager) {
-      // Look for plugin files.
-      if ($LibraryPath === FALSE) {
-         foreach (Gdn::PluginManager()->SearchPaths() as $SearchPath => $Trash) {
-            // If we have already loaded the plugin manager, use its internal folder list, otherwise scan all subfolders during search
-            $PluginFolders = (Gdn::PluginManager()->Started()) ? Gdn::PluginManager()->EnabledPluginFolders($SearchPath) : TRUE;
-            
-            $LibraryPath = Gdn_FileSystem::FindByMapping('library', $SearchPath, $PluginFolders, $LibraryFileName);
-         }
+      // Work with the path in the url & the provided src path to backtrace if necessary
+      $UrlPathParts = explode('/', str_replace('\\', '/', parse_url($Url, PHP_URL_PATH)));
+      $SrcParts = explode('/', str_replace('\\', '/', $SrcPath));
+      $Result = array();
+      foreach ($SrcParts as $Part) {
+         if (!$Part || $Part == '.')
+            continue;
+         
+         if ($Part == '..')
+            array_pop($UrlPathParts);
+         else
+            $Result[] = $Part;
       }
-
-      // Look harder for plugin files.
-      if ($LibraryPath === FALSE) {
-         $LibraryPath = Gdn_FileSystem::FindByMapping('plugin', FALSE, FALSE, $ClassName);
-      }
-   }
-
-   // If this is a model, look in the models folder(s)
-   if (!$LibraryPath && strtolower(substr($ClassName, -5)) == 'model')
-      $LibraryPath = Gdn_FileSystem::FindByMapping('library', PATH_APPLICATIONS, $ApplicationWhiteList, "models/{$LibraryFileName}");
-
-   // Look for the class in the applications' library folders.
-   if ($LibraryPath === FALSE) {
-      $LibraryPath = Gdn_FileSystem::FindByMapping('library', PATH_APPLICATIONS, $ApplicationWhiteList, "library/{$LibraryFileName}");
-   }
-
-   // Look for the class in the core.
-   if ($LibraryPath === FALSE)
-      $LibraryPath = Gdn_FileSystem::FindByMapping(
-         'library',
-         PATH_LIBRARY,
-         array(
-            'core',
-            'database',
-            'vendors/phpmailer'
-         ),
-         $LibraryFileName
-      );
-
-   // If it still hasn't been found, check for modules
-   if ($LibraryPath === FALSE)
-      $LibraryPath = Gdn_FileSystem::FindByMapping('library', PATH_APPLICATIONS, $ApplicationWhiteList, "modules/{$LibraryFileName}");
-
-   if ($LibraryPath !== FALSE)
-      include_once($LibraryPath);
-}
-
-if (!function_exists('__autoload')) {
-   function __autoload($ClassName) {
-      trigger_error('__autoload() is deprecated. Use sp_autoload_call() instead.', E_USER_DEPRECATED);
-      spl_autoload_call($ClassName);
+      // Put it all together & return
+      return parse_url($Url, PHP_URL_SCHEME)
+         .'://'
+         .parse_url($Url, PHP_URL_HOST)
+         .'/'.implode('/', array_filter(array_merge($UrlPathParts, $Result)));
    }
 }
-
-spl_autoload_register('Gdn_Autoload', FALSE);
-*/
-
 
 if (!function_exists('AddActivity')) {
    /**
@@ -216,6 +176,7 @@ if (!function_exists('ArrayTranslate')) {
     * @return array
     */
    function ArrayTranslate($Array, $Mappings) {
+      $Array = (array)$Array;
       $Result = array();
       foreach ($Mappings as $Index => $Value) {
          if (is_numeric($Index)) {
@@ -374,6 +335,22 @@ if (!function_exists('C')) {
    }
 }
 
+if (!function_exists('CTo')) {
+   function CTo(&$Data, $Name, $Value) {
+      $Name = explode('.', $Name);
+      $LastKey = array_pop($Name);
+      $Current =& $Data;
+      
+      foreach ($Name as $Key) {
+         if (!isset($Current[$Key]))
+            $Current[$Key] = array();
+         
+         $Current =& $Current[$Key];
+      }
+      $Current[$LastKey] = $Value;
+   }
+}
+
 if (!function_exists('CalculateNumberOfPages')) {
    /**
     * Based on the total number of items and the number of items per page,
@@ -412,9 +389,18 @@ if (!function_exists('ChangeBasename')) {
    }
 }
 
+// Smarty
 if (!function_exists('CheckPermission')) {
    function CheckPermission($PermissionName) {
       $Result = Gdn::Session()->CheckPermission($PermissionName);
+      return $Result;
+   }
+}
+
+// Smarty sux
+if (!function_exists('MultiCheckPermission')) {
+   function MultiCheckPermission($PermissionName) {
+      $Result = Gdn::Session()->CheckPermission($PermissionName, FALSE);
       return $Result;
    }
 }
@@ -586,15 +572,17 @@ if (!function_exists('decho')) {
    /**
     * Echo's debug variables if user is root admin.
     */
-   function decho($Mixed, $Prefix = 'DEBUG: ') {
-      if (Gdn::Session()->CheckPermission('Garden.Debug.Allow')) {
-         echo '<div style="text-align: left; padding: 0 4px;">'.$Prefix;
+   function decho($Mixed, $Prefix = 'DEBUG', $Permission = FALSE) {
+      $Prefix = StringEndsWith($Prefix, ': ', TRUE, TRUE).': ';
+      
+      if (!$Permission || Gdn::Session()->CheckPermission('Garden.Debug.Allow')) {
+         echo '<pre style="text-align: left; padding: 0 4px;">'.$Prefix;
          if (is_string($Mixed))
             echo $Mixed;
          else
-            var_dump($Mixed);
+            echo htmlspecialchars(print_r($Mixed, TRUE));
       
-         echo '</div>';
+         echo '</pre>';
       }
    }
 }
@@ -635,6 +623,25 @@ if (!function_exists('Debug')) {
    }
 }
 
+if (!function_exists('DebugMethod')) {
+   function DebugMethod($MethodName, $MethodArgs = array()) {
+      echo $MethodName."(";
+      $SA = array();
+      foreach ($MethodArgs as $FuncArg) {
+         if (is_null($FuncArg))
+            $SA[] = 'NULL';
+         elseif (!is_array($FuncArg) && !is_object($FuncArg))
+            $SA[] = "'{$FuncArg}'";
+         elseif (is_array($FuncArg))
+            $SA[] = "'Array(".sizeof($FuncArg).")'";
+         else
+            $SA[] = gettype($FuncArg)."/".get_class($FuncArg);
+      }
+      echo implode(', ', $SA);
+      echo ")\n";
+   }
+}
+
 if (!function_exists('Deprecated')) {
    /**
     * Mark a function deprecated.
@@ -661,6 +668,235 @@ if (!function_exists('ExternalUrl')) {
          $Result = Url($Path, TRUE);
 
       return $Result;
+   }
+}
+
+
+if (!function_exists('FetchPageInfo')) {
+   /**
+    * Examines the page at $Url for title, description & images. Be sure to check the resultant array for any Exceptions that occurred while retrieving the page. 
+    * @param string $Url The url to examine.
+    * @param integer $Timeout How long to allow for this request. Default Garden.SocketTimeout or 1, 0 to never timeout. Default is 0.
+    * @return array an array containing Url, Title, Description, Images (array) and Exception (if there were problems retrieving the page).
+    */
+   function FetchPageInfo($Url, $Timeout = 0) {
+      $PageInfo = array(
+         'Url' => $Url,
+         'Title' => '',
+         'Description' => '',
+         'Images' => array(),
+         'Exception' => FALSE
+      );
+      try {
+         if (!defined('HDOM_TYPE_ELEMENT'))
+            require_once(PATH_LIBRARY.'/vendors/simplehtmldom/simple_html_dom.php');
+            
+         $PageHtml = ProxyRequest($Url, $Timeout, TRUE);
+         $Dom = str_get_html($PageHtml);
+         if (!$Dom)
+            throw new Exception('Failed to load page for parsing.');
+         
+         /* Sample Facebook Open Graph code:
+
+<meta property="og:title" content="60 degrees in&nbsp;February" />
+<meta property="og:url" content="http://karinemily.wordpress.com/2012/02/02/60-degrees-in-february/" />
+<meta property="og:description" content="and Philadelphia explodes with babies, puppies, and hipsters." />
+<meta property="og:site_name" content="K a r i &#039; s" />
+<meta property="og:image" content="http://karinemily.files.wordpress.com/2012/02/dsc_0132.jpg?w=300&amp;h=300" />
+<meta property="og:image" content="http://karinemily.files.wordpress.com/2012/02/dsc_0214.jpg?w=300&amp;h=300" />
+<meta property="og:image" content="http://karinemily.files.wordpress.com/2012/02/dsc_0213.jpg?w=300&amp;h=300" />
+<meta property="og:image" content="http://karinemily.files.wordpress.com/2012/02/dsc_0221-version-2.jpg?w=300&amp;h=300" />
+
+          */
+         
+         // FIRST PASS: Look for open graph title, desc, images
+         $PageInfo['Title'] = DomGetContent($Dom, 'meta[property=og:title]');
+         
+         Trace('Getting og:description');
+         $PageInfo['Description'] = DomGetContent($Dom, 'meta[property=og:description]');
+         foreach ($Dom->find('meta[property=og:image]') as $Image) {
+            if (isset($Image->content))
+               $PageInfo['Images'][] = $Image->content;
+         }
+
+         // SECOND PASS: Look in the page for title, desc, images
+         if ($PageInfo['Title'] == '')
+            $PageInfo['Title'] = $Dom->find('title', 0)->plaintext;
+         
+         if ($PageInfo['Description'] == '') {
+            Trace('Getting meta description');
+            $PageInfo['Description'] = DomGetContent($Dom, 'meta[name=description]');
+         }
+
+         // THIRD PASS: Look in the page contents
+         if ($PageInfo['Description'] == '') {
+            foreach($Dom->find('p') as $element) {
+               Trace('Looking at p for description.');
+               
+               if (strlen($element->plaintext) > 150) {
+                  $PageInfo['Description'] = $element->plaintext;
+                  break;
+               }
+            }
+            if (strlen($PageInfo['Description']) > 400)
+               $PageInfo['Description'] = SliceParagraph($PageInfo['Description'], 400);
+         }
+         
+         // Final: Still nothing? remove limitations
+         if ($PageInfo['Description'] == '') {
+            foreach($Dom->find('p') as $element) {
+               Trace('Looking at p for description (no restrictions)');
+               if (trim($element->plaintext) != '') {
+                  $PageInfo['Description'] = $element->plaintext;
+                  break;
+               }
+            }
+         }
+            
+         // Page Images
+         if (count($PageInfo['Images']) == 0) {
+            $Images = DomGetImages($Dom, $Url);
+            $PageInfo['Images'] = array_values($Images);
+         }
+         
+         $PageInfo['Title'] = HtmlEntityDecode($PageInfo['Title']);
+         $PageInfo['Description'] = HtmlEntityDecode($PageInfo['Description']);
+
+      } catch (Exception $ex) {
+         $PageInfo['Exception'] = $ex->getMessage();
+      }
+      return $PageInfo;
+   }
+}
+
+if (!function_exists('DomGetContent')) {
+   function DomGetContent($Dom, $Selector, $Default = '') {
+      $Element = $Dom->getElementsByTagName($Selector);
+      return isset($Element->content) ? $Element->content : $Default;
+   }
+}
+
+if (!function_exists('DomGetImages')) {
+   function DomGetImages($Dom, $Url, $MaxImages = 4) {
+      $Images = array();
+      foreach ($Dom->find('img') as $element) {
+         $Images[] = array('Src' => AbsoluteSource($element->src, $Url), 'Width' => $element->width, 'Height' => $element->height);
+      }
+      
+//      Gdn::Controller()->Data['AllImages'] = $Images;
+
+      // Sort by size, biggest one first
+      $ImageSort = array();
+      // Only look at first 4 images (speed!)
+      $i = 0;
+      foreach ($Images as $ImageInfo) {
+         $Image = $ImageInfo['Src'];
+         
+         if (strpos($Image, 'doubleclick.') != FALSE)
+            continue;
+         
+         try {
+            if ($ImageInfo['Height'] && $ImageInfo['Width']) {
+               $Height = $ImageInfo['Height'];
+               $Width = $ImageInfo['Width'];
+            } else {
+               list($Width, $Height) = getimagesize($Image);
+            }
+            
+            $Diag = (int)floor(sqrt(($Width*$Width) + ($Height*$Height)));
+            
+//            Gdn::Controller()->Data['Foo'][] = array($Image, $Width, $Height, $Diag);
+            
+            if (!$Width || !$Height)
+               continue;
+            
+            // Require min 100x100 dimension image.
+            if ($Width < 100 && $Height < 100)
+               continue;
+            
+            // Don't take a banner-shaped image.
+            if ($Height * 4 < $Width)
+               continue;
+            
+            // Prefer images that are less than 800px wide (banners?)
+//            if ($Diag > 141 && $Width < 800) { }
+               
+            if (!array_key_exists($Diag, $ImageSort)) {
+               $ImageSort[$Diag] = array($Image);
+            } else {
+               $ImageSort[$Diag][] = $Image;
+            }
+            
+            
+            $i++;
+
+            if ($i > $MaxImages)
+               break;
+         } catch(Exception $ex) {
+            // do nothing
+         }
+      }
+      
+      krsort($ImageSort);
+      $GoodImages = array();
+      foreach ($ImageSort as $Diag => $Arr) {
+         $GoodImages = array_merge($GoodImages, $Arr);
+      }
+      return $GoodImages;
+   }
+}
+
+/**
+ * Replace missing 'fnmatch' on Windows + PHP <5.3
+ */
+if (!function_exists('fnmatch')) { 
+   define('FNM_PATHNAME', 1); 
+   define('FNM_NOESCAPE', 2); 
+   define('FNM_PERIOD', 4); 
+   define('FNM_CASEFOLD', 16); 
+
+   function fnmatch($pattern, $string, $flags = 0) { 
+      return pcre_fnmatch($pattern, $string, $flags); 
+   } 
+
+   function pcre_fnmatch($pattern, $string, $flags = 0) { 
+      $modifiers = null; 
+      $transforms = array( 
+         '\*'    => '.*', 
+         '\?'    => '.', 
+         '\[\!'    => '[^', 
+         '\['    => '[', 
+         '\]'    => ']', 
+         '\.'    => '\.', 
+         '\\'    => '\\\\' 
+      );
+
+      // Forward slash in string must be in pattern: 
+      if ($flags & FNM_PATHNAME) { 
+         $transforms['\*'] = '[^/]*'; 
+      } 
+
+      // Back slash should not be escaped: 
+      if ($flags & FNM_NOESCAPE) { 
+         unset($transforms['\\']); 
+      } 
+
+      // Perform case insensitive match: 
+      if ($flags & FNM_CASEFOLD) { 
+         $modifiers .= 'i'; 
+      } 
+
+      // Period at start must be the same as pattern: 
+      if ($flags & FNM_PERIOD) { 
+         if (strpos($string, '.') === 0 && strpos($pattern, '.') !== 0) return false; 
+      } 
+
+      $pattern = '#^' 
+         . strtr(preg_quote($pattern, '#'), $transforms) 
+         . '$#' 
+         . $modifiers; 
+
+      return (boolean)preg_match($pattern, $string); 
    }
 }
 
@@ -703,9 +939,9 @@ function _FormatStringCallback($Match, $SetArgs = FALSE) {
    // Parse out the field and format.
    $Parts = explode(',', $Match);
    $Field = trim($Parts[0]);
-   $Format = strtolower(trim(GetValue(1, $Parts, '')));
+   $Format = trim(GetValue(1, $Parts, ''));
    $SubFormat = strtolower(trim(GetValue(2, $Parts, '')));
-   $FomatArgs = GetValue(3, $Parts, '');
+   $FormatArgs = GetValue(3, $Parts, '');
 
    if (in_array($Format, array('currency', 'integer', 'percent'))) {
       $FormatArgs = $SubFormat;
@@ -717,7 +953,7 @@ function _FormatStringCallback($Match, $SetArgs = FALSE) {
    }
 
    $Value = GetValueR($Field, $Args, '');
-   if ($Value == '' && $Format != 'url') {
+   if ($Value == '' && !in_array($Format, array('url', 'exurl'))) {
       $Result = '';
    } else {
       switch(strtolower($Format)) {
@@ -763,8 +999,28 @@ function _FormatStringCallback($Match, $SetArgs = FALSE) {
                }
             }
             break;
+         case 'plural':
+            if (is_array($Value))
+               $Value = count($Value);
+            elseif (StringEndsWith($Field, 'UserID', TRUE))
+               $Value = 1;
+            
+            if(!is_numeric($Value)) {
+               $Result = $Value;
+            } else {
+               if (!$SubFormat)
+                  $SubFormat = rtrim("%s $Field", 's');
+               if (!$FormatArgs)
+                  $FormatArgs = $SubFormat.'s';
+               
+               $Result = Plural($Value, $SubFormat, $FormatArgs);
+            }
+            break;
          case 'rawurlencode':
             $Result = rawurlencode($Value);
+            break;
+         case 'text':
+            $Result = Gdn_Format::Text($Value, FALSE);
             break;
          case 'time':
             $Result = Gdn_Format::Date($Value, '%l:%M%p');
@@ -774,8 +1030,66 @@ function _FormatStringCallback($Match, $SetArgs = FALSE) {
                $Value = $Field;
             $Result = Url($Value, $SubFormat == 'domain');
             break;
+         case 'exurl':
+            if (strpos($Field, '/') !== FALSE)
+               $Value = $Field;
+            $Result = ExternalUrl($Value);
+            break;
          case 'urlencode':
             $Result = urlencode($Value);
+            break;
+         case 'user':
+         case 'you':
+         case 'his':
+         case 'her':
+         case 'your':
+            $Result = print_r($Value, TRUE);
+            $ArgsBak = $Args;
+            if (is_array($Value) && count($Value) == 1)
+               $Value = array_shift($Value);
+            
+            if (is_array($Value)) {
+               $Max = C('Garden.FormatUsername.Max', 5);
+               
+               $Count = count($Value);
+               $Result = '';
+               for ($i = 0; $i < $Count; $i++) {
+                  if ($i >= $Max && $Count > $Max + 1) {
+                     $Others = $Count - $i;
+                     $Result .= ' '.T('sep and', 'and').' '
+                        .Plural($Others, '%s other', '%s others');
+                     break;
+                  }
+                  
+                  $ID = $Value[$i];
+                  if (is_array($ID)) {
+                     continue;
+                  }
+                  
+                  if ($i == $Count - 1)
+                     $Result .= ' '.T('sep and', 'and').' ';
+                  elseif ($i > 0)
+                     $Result .= ', ';
+                  
+                  $Special = array(-1 => T('everyone'), -2 => T('moderators'), -3 => T('administrators'));
+                  if (isset($Special[$ID])) {
+                     $Result .= $Special[$ID];
+                  } else {
+                     $User = Gdn::UserModel()->GetID($ID);
+                     $User->Name = FormatUsername($User, $Format, Gdn::Session()->UserID);
+
+
+                     $Result .= UserAnchor($User);
+                  }
+               }
+            } else {
+               $User = Gdn::UserModel()->GetID($Value);
+               $User->Name = FormatUsername($User, $Format, Gdn::Session()->UserID);
+               
+               $Result = UserAnchor($User);
+            }
+               
+            $Args = $ArgsBak;
             break;
          default:
             $Result = $Value;
@@ -814,6 +1128,19 @@ if (!function_exists('ForceSSL')) {
    }
 }
 
+if (!function_exists('ForceNoSSL')) {
+   /**
+    * Checks the current url for SSL and redirects to SSL version if not
+    * currently on it. Call at the beginning of any method you want forced to
+    * be in SSL. Garden.AllowSSL must be TRUE in order for this function to
+    * work.
+    */
+   function ForceNoSSL() {
+      if (Gdn::Request()->Scheme() != 'http')
+         Redirect(Gdn::Request()->Url('', TRUE, FALSE));
+   }
+}
+
 // Formats values to be saved as PHP arrays.
 if (!function_exists('FormatArrayAssignment')) {
    function FormatArrayAssignment(&$Array, $Prefix, $Value) {
@@ -837,10 +1164,38 @@ if (!function_exists('FormatArrayAssignment')) {
       } elseif (in_array($Value, array('TRUE', 'FALSE'))) {
          $Array[] = $Prefix .= ' = '.($Value == 'TRUE' ? 'TRUE' : 'FALSE').';';
       } else {
-         if (strpos($Value, "'") !== FALSE) {
-            $Array[] = $Prefix .= ' = "'.Gdn_Format::ArrayValueForPhp(str_replace('"', '\"', $Value)).'";';
+         $Array[] = $Prefix .= ' = '.var_export($Value, TRUE).';';
+      }
+   }
+}
+
+// Formats values to be saved in dotted notation
+if (!function_exists('FormatDottedAssignment')) {
+   function FormatDottedAssignment(&$Array, $Prefix, $Value) {
+      if (is_array($Value)) {
+         // If $Value doesn't contain a key of "0" OR it does and it's value IS
+         // an array, this should be treated as an associative array.
+         $IsAssociativeArray = array_key_exists(0, $Value) === FALSE || is_array($Value[0]) === TRUE ? TRUE : FALSE;
+         if ($IsAssociativeArray === TRUE) {
+            foreach ($Value as $k => $v) {
+               FormatDottedAssignment($Array, "{$Prefix}.{$k}", $v);
+            }
          } else {
-            $Array[] = $Prefix .= " = '".Gdn_Format::ArrayValueForPhp($Value)."';";
+            // If $Value is not an associative array, just write it like a simple array definition.
+            $FormattedValue = array_map(array('Gdn_Format', 'ArrayValueForPhp'), $Value);
+            $Prefix .= "']";
+            $Array[] = $Prefix .= " = array('".implode("', '", $FormattedValue)."');";
+         }
+      } else {
+         $Prefix .= "']";
+         if (is_int($Value)) {
+            $Array[] = $Prefix .= ' = '.$Value.';';
+         } elseif (is_bool($Value)) {
+            $Array[] = $Prefix .= ' = '.($Value ? 'TRUE' : 'FALSE').';';
+         } elseif (in_array($Value, array('TRUE', 'FALSE'))) {
+            $Array[] = $Prefix .= ' = '.($Value == 'TRUE' ? 'TRUE' : 'FALSE').';';
+         } else {
+            $Array[] = $Prefix .= ' = '.var_export($Value, TRUE).';';
          }
       }
    }
@@ -891,6 +1246,12 @@ if (!function_exists('GetIncomingValue')) {
 
 if (!function_exists('GetMentions')) {
    function GetMentions($String) {
+      // Check for a custom mentions formatter and use it.
+      $Formatter = Gdn::Factory('MentionsFormatter');
+      if (is_object($Formatter)) {
+         return $Formatter->GetMentions($String);
+      }
+
       $Mentions = array();
       
       // This one grabs mentions that start at the beginning of $String
@@ -988,6 +1349,50 @@ if (!function_exists('GetValueR')) {
    }
 }
 
+if (!function_exists('HtmlEntityDecode')):
+   
+/**
+ * Decode ALL of the entities out of an html string.
+ * 
+ * @param string $string The string to decode.
+ * @param constant $quote_style
+ * @param string $charset
+ * @return string 
+ * @since 2.1
+ */
+function HtmlEntityDecode($string, $quote_style = ENT_QUOTES, $charset = "utf-8") {
+   $string = html_entity_decode($string, $quote_style, $charset);
+   $string = str_ireplace('&apos;', "'", $string);
+   $string = preg_replace_callback('~&#x([0-9a-fA-F]+);~i', "chr_utf8_callback", $string);
+   $string = preg_replace('~&#([0-9]+);~e', 'chr_utf8("\\1")', $string);
+   return $string; 
+}
+
+/** 
+ * Callback helper 
+ */
+
+function chr_utf8_callback($matches) { 
+   return chr_utf8(hexdec($matches[1])); 
+}
+
+/**
+* Multi-byte chr(): Will turn a numeric argument into a UTF-8 string.
+* 
+* @param mixed $num
+* @return string
+*/
+
+function chr_utf8($num) {
+   if ($num < 128) return chr($num);
+   if ($num < 2048) return chr(($num >> 6) + 192) . chr(($num & 63) + 128);
+   if ($num < 65536) return chr(($num >> 12) + 224) . chr((($num >> 6) & 63) + 128) . chr(($num & 63) + 128);
+   if ($num < 2097152) return chr(($num >> 18) + 240) . chr((($num >> 12) & 63) + 128) . chr((($num >> 6) & 63) + 128) . chr(($num & 63) + 128);
+   return '';
+}
+
+endif;
+
 if (!function_exists('ImplodeAssoc')) {
    /**
     * A version of implode() that operates on array keys and values.
@@ -1039,11 +1444,18 @@ if (!function_exists('InSubArray')) {
 
 if (!function_exists('IsMobile')) {
    function IsMobile() {
+      static $IsMobile = 'unset';
+      
+      // Short circuit so we only do this work once per pageload
+      if ($IsMobile != 'unset') return $IsMobile;
+      
+      // Start out assuming not mobile
       $Mobile = 0;
+      
       $AllHttp = strtolower(GetValue('ALL_HTTP', $_SERVER));
       $HttpAccept = strtolower(GetValue('HTTP_ACCEPT', $_SERVER));
       $UserAgent = strtolower(GetValue('HTTP_USER_AGENT', $_SERVER));
-      if (preg_match('/(up.browser|up.link|mmp|symbian|smartphone|midp|wap|phone|opera m)/i', $UserAgent))
+      if (preg_match('/(up.browser|up.link|mmp|symbian|smartphone|midp|wap|phone|opera m|kindle|webos|playbook)/i', $UserAgent))
          $Mobile++;
  
       if(
@@ -1078,8 +1490,14 @@ if (!function_exists('IsMobile')) {
       // Windows Mobile 7 contains "windows" in the useragent string, so must comment this out
       // if (strpos($UserAgent, 'windows') > 0)
       //   $Mobile = 0;
- 
-      return $Mobile > 0;
+      
+      $IsMobile = ($Mobile > 0);
+      
+      $ForceNoMobile = Gdn_CookieIdentity::GetCookiePayload('VanillaNoMobile');
+      if (($Mobile > 0) && $ForceNoMobile !== FALSE && is_array($ForceNoMobile) && in_array('force', $ForceNoMobile))
+         $IsMobile = NULL;
+      
+      return $IsMobile;
    }
 }
 
@@ -1149,6 +1567,20 @@ if (!function_exists('IsWritable')) {
       return TRUE;
    }
 }
+
+if (!function_exists('MarkString')):
+   /**
+    * Wrap occurences of $Needle in $Haystack with <mark> tags. Explodes $Needle 
+    * on spaces. Returns $Haystack with replacements.
+    */   
+   function MarkString($Needle, $Haystack) {
+      $Needle = explode(' ', $Needle);
+      foreach ($Needle as $n) {
+         $Haystack = preg_replace('#(?!<.*?)('.preg_quote($n).')(?![^<>]*?>)#i', '<mark>\1</mark>', $Haystack);
+      }
+      return $Haystack;
+   }
+endif;
 
 if (!function_exists('MergeArrays')) {
    /**
@@ -1234,12 +1666,21 @@ if (!function_exists('PageNumber')) {
     *
     * @param int $Offset The database offset, starting at zero.
     * @param int $Limit The database limit, otherwise known as the page size.
-    * @param bool $UrlParam Whether or not the result should be formatted as a url parameter, suitable for OffsetLimit.
+    * @param bool|string $UrlParam Whether or not the result should be formatted as a url parameter, suitable for OffsetLimit.
+    *  - bool: true means yes, false means no.
+    *  - string: The prefix for the page number.
+    * @param bool $First Whether or not to return the page number if it is the first page.
     */
-   function PageNumber($Offset, $Limit, $UrlParam = FALSE) {
+   function PageNumber($Offset, $Limit, $UrlParam = FALSE, $First = TRUE) {
       $Result = floor($Offset / $Limit) + 1;
-      if ($UrlParam)
+
+      if ($UrlParam !== FALSE && !$First && $Result == 1)
+         $Result = '';
+      elseif ($UrlParam === TRUE)
          $Result = 'p'.$Result;
+      elseif (is_string($UrlParam))
+         $Result = $UrlParam.$Result;
+
       return $Result;
    }
 }
@@ -1264,6 +1705,28 @@ if (!function_exists('parse_ini_string')) {
    }
 }
 
+if (!function_exists('write_ini_string')) {
+   function write_ini_string($Data) {
+      $Flat = array();
+      foreach($Data as $Topic => $Settings) {
+         if (is_array($Settings)) {
+            $Flat[] = "[{$Topic}]";
+               foreach ($Settings as $SettingsKey => $SettingsVal) $Flat[] = "{$SettingsKey} = ".(is_numeric($SettingsVal) ? $SettingsVal : '"'.$SettingsVal.'"');
+            $Flat[] = "";
+         }
+         else $Flat[] = "{$Topic} = ".(is_numeric($Settings) ? $Settings : '"'.$Settings.'"');
+      }
+      return implode("\n", $Flat);
+   }
+}
+
+if (!function_exists('write_ini_file')) {
+   function write_ini_file($File, $Data) {
+      $String = write_ini_string($Data);
+      Gdn_FileSystem::SaveFile($File, $String);
+   }
+}
+
 if (!function_exists('SignInPopup')) {
    /**
     * Returns a boolean value indicating if sign in windows should be "popped"
@@ -1271,6 +1734,85 @@ if (!function_exists('SignInPopup')) {
     */
    function SignInPopup() {
       return C('Garden.SignIn.Popup') && !IsMobile();
+   }
+}
+
+if (!function_exists('ParseUrl')) {
+   // 
+   /** 
+    * A Vanilla wrapper for php's parse_url, which doesn't always return values for every url part.
+    * @param string $Url The url to parse. 
+    * @param constant Use PHP_URL_SCHEME, PHP_URL_HOST, PHP_URL_PORT, PHP_URL_USER, PHP_URL_PASS, PHP_URL_PATH, PHP_URL_QUERY or PHP_URL_FRAGMENT to retrieve just a specific url component.
+    */
+   function ParseUrl($Url, $Component = -1) {
+      // Retrieve all the parts
+      $PHP_URL_SCHEME = @parse_url($Url, PHP_URL_SCHEME);
+      $PHP_URL_HOST = @parse_url($Url, PHP_URL_HOST);
+      $PHP_URL_PORT = @parse_url($Url, PHP_URL_PORT);
+      $PHP_URL_USER = @parse_url($Url, PHP_URL_USER);
+      $PHP_URL_PASS = @parse_url($Url, PHP_URL_PASS);
+      $PHP_URL_PATH = @parse_url($Url, PHP_URL_PATH);
+      $PHP_URL_QUERY = @parse_url($Url, PHP_URL_QUERY);
+      $PHP_URL_FRAGMENT = @parse_url($Url, PHP_URL_FRAGMENT);
+
+      // Build a cleaned up array to return
+      $Parts = array(
+         'scheme' => $PHP_URL_SCHEME == NULL ? 'http' : $PHP_URL_SCHEME,
+         'host' => $PHP_URL_HOST == NULL ? '' : $PHP_URL_HOST,
+         'port' => $PHP_URL_PORT == NULL ? $PHP_URL_SCHEME == 'https' ? '443' : '80' : $PHP_URL_PORT,
+         'user' => $PHP_URL_USER == NULL ? '' : $PHP_URL_USER,
+         'pass' => $PHP_URL_PASS == NULL ? '' : $PHP_URL_PASS,
+         'path' => $PHP_URL_PATH == NULL ? '' : $PHP_URL_PATH,
+         'query' => $PHP_URL_QUERY == NULL ? '' : $PHP_URL_QUERY,
+         'fragment' => $PHP_URL_FRAGMENT == NULL ? '' : $PHP_URL_FRAGMENT
+      );
+      
+      // Return
+      switch ($Component) {
+         case PHP_URL_SCHEME: return $Parts['scheme'];
+         case PHP_URL_HOST: return $Parts['host'];
+         case PHP_URL_PORT: return $Parts['port'];
+         case PHP_URL_USER: return $Parts['user'];
+         case PHP_URL_PASS: return $Parts['pass'];
+         case PHP_URL_PATH: return $Parts['path'];
+         case PHP_URL_QUERY: return $Parts['query'];
+         case PHP_URL_FRAGMENT: return $Parts['fragment'];
+         default: return $Parts;
+      }
+   }
+}
+if (!function_exists('BuildUrl')) {
+   // 
+   /** 
+    * Complementary to ParseUrl, this function puts the pieces back together and returns a valid url.
+    * @param array ParseUrl array to build. 
+    */
+   function BuildUrl($Parts) {
+      // Full format: http://user:pass@hostname:port/path?querystring#fragment
+      $Return = $Parts['scheme'].'://';
+      if ($Parts['user'] != '' || $Parts['pass'] != '')
+         $Return .= $Parts['user'].':'.$Parts['pass'].'@';
+
+      $Return .= $Parts['host'];
+      // Custom port?
+      if ($Parts['port'] == '443' && $Parts['scheme'] == 'https') {
+      } elseif ($Parts['port'] == '80' && $Parts['scheme'] == 'http') {
+      } elseif ($Parts['port'] != '') {
+         $Return .= ':'.$Parts['port'];
+      }
+      
+      if ($Parts['path'] != '') {
+         if (substr($Parts['path'], 0, 1) != '/')
+            $Return .= '/';
+         $Return .= $Parts['path'];
+      }
+      if ($Parts['query'] != '') 
+         $Return .= '?'.$Parts['query'];
+      
+      if ($Parts['fragment'] != '') 
+         $Return .= '#'.$Parts['fragment'];
+      
+      return $Return;
    }
 }
 
@@ -1286,6 +1828,48 @@ if (!function_exists('PrefixString')) {
          $String = $Prefix . $String;
       }
       return $String;
+   }
+}
+
+if (!function_exists('PrepareArray')) {
+   /**
+    * Makes sure that the key in question exists and is of the specified type,
+    * by default also an array.
+    * 
+    * @param string $Key Key to prepare
+    * @param array $Array Array to repare
+    * @param string $PrepareType Optional, 
+    */
+   function PrepareArray($Key, &$Array, $PrepareType = 'array') {
+      if (!array_key_exists($Key, $Array))
+         $Array[$Key] = NULL;
+      
+      switch ($PrepareType) {
+         case 'array':
+            if (!is_array($Array[$Key]))
+               $Array[$Key] = array();
+            break;
+            
+         case 'integer':
+            if (!is_integer($Array[$Key]))
+               $Array[$Key] = 0;
+            break;
+            
+         case 'float':
+            if (!is_float($Array[$Key]))
+               $Array[$Key] = 0.0;
+            break;
+            
+         case 'null':
+            if (!is_null($Array[$Key]))
+               $Array[$Key] = NULL;
+            break;
+            
+         case 'string':
+            if (!is_string($Array[$Key]))
+               $Array[$Key] = '';
+            break;
+      }
    }
 }
 
@@ -1439,13 +2023,13 @@ if (!function_exists('ProxyRequest')) {
     */
    function ProxyRequest($Url, $Timeout = FALSE, $FollowRedirects = FALSE) {
       $OriginalTimeout = $Timeout;
-		if ($Timeout === FALSE)
-			$Timeout = C('Garden.SocketTimeout', 1.0);
+      if ($Timeout === FALSE)
+         $Timeout = C('Garden.SocketTimeout', 1.0);
 
       $UrlParts = parse_url($Url);
       $Scheme = GetValue('scheme', $UrlParts, 'http');
       $Host = GetValue('host', $UrlParts, '');
-      $Port = GetValue('port', $UrlParts, '80');
+      $Port = GetValue('port', $UrlParts, $Scheme == 'https' ? '443' : '80');
       $Path = GetValue('path', $UrlParts, '');
       $Query = GetValue('query', $UrlParts, '');
       // Get the cookie.
@@ -1464,14 +2048,15 @@ if (!function_exists('ProxyRequest')) {
       }
       $Response = '';
       if (function_exists('curl_init')) {
-         
          //$Url = $Scheme.'://'.$Host.$Path;
          $Handler = curl_init();
          curl_setopt($Handler, CURLOPT_URL, $Url);
          curl_setopt($Handler, CURLOPT_PORT, $Port);
+         curl_setopt($Handler, CURLOPT_SSL_VERIFYPEER, FALSE);
          curl_setopt($Handler, CURLOPT_HEADER, 1);
          curl_setopt($Handler, CURLOPT_USERAGENT, ArrayValue('HTTP_USER_AGENT', $_SERVER, 'Vanilla/2.0'));
          curl_setopt($Handler, CURLOPT_RETURNTRANSFER, 1);
+         
          if ($Cookie != '')
             curl_setopt($Handler, CURLOPT_COOKIE, $Cookie);
          
@@ -1484,12 +2069,12 @@ if (!function_exists('ProxyRequest')) {
          //   curl_setopt($Handler, CURLOPT_POST, 1);
          //   curl_setopt($Handler, CURLOPT_POSTFIELDS, $Query);
          //}
-         
          $Response = curl_exec($Handler);
          $Success = TRUE;
          if ($Response == FALSE) {
             $Success = FALSE;
-            $Response = curl_error($Handler);
+            $Response = '';
+            throw new Exception(curl_error($Handler));
          }
          
          curl_close($Handler);
@@ -1570,7 +2155,7 @@ if (!function_exists('ProxyRequest')) {
          $Code = GetValue('StatusCode',$ResponseHeaders, 200);
          if (in_array($Code, array(301,302))) {
             if (array_key_exists('Location', $ResponseHeaders)) {
-               $Location = GetValue('Location', $ResponseHeaders);
+               $Location = AbsoluteSource(GetValue('Location', $ResponseHeaders), $Url);
                return ProxyRequest($Location, $OriginalTimeout, $FollowRedirects);
             }
          }
@@ -1585,6 +2170,29 @@ if (!function_exists('RandomString')) {
       $CharLen = strlen($Characters) - 1;
       $String = '' ;
       for ($i = 0; $i < $Length; ++$i) {
+        $Offset = mt_rand() % $CharLen;
+        $String .= substr($Characters, $Offset, 1);
+      }
+      return $String;
+   }
+}
+
+if (!function_exists('BetterRandomString')) {
+   function BetterRandomString($Length, $CharacterOptions = 'A0') {
+      $CharacterClasses = array(
+          'A' => 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+          'a' => 'abcdefghijklmnopqrstuvwxyz',
+          '0' => '0123456789',
+          '!' => '~!@#$^&*_+-'
+      );
+
+      $Characters = '';
+      for ($i=0;$i<strlen($CharacterOptions);$i++)
+         $Characters .= GetValue($CharacterOptions{$i}, $CharacterClasses);
+
+      $CharLen = strlen($Characters) - 1;
+      $String = '' ;
+      for ($i = 0; $i < $Length; ++$i) {
         $Offset = rand() % $CharLen;
         $String .= substr($Characters, $Offset, 1);
       }
@@ -1596,6 +2204,11 @@ if (!function_exists('Redirect')) {
    function Redirect($Destination = FALSE, $StatusCode = NULL) {
       if (!$Destination)
          $Destination = Url('');
+      
+//      if (Debug() && $Trace = Trace()) {
+//         Trace("Redirecting to $Destination");
+//         return;
+//      }
          
       // Close any db connections before exit
       $Database = Gdn::Database();
@@ -1606,7 +2219,7 @@ if (!function_exists('Redirect')) {
       // assign status code
       $SendCode = (is_null($StatusCode)) ? 302 : $StatusCode;
       // re-assign the location header
-      header("location: ".Url($Destination), TRUE, $SendCode);
+      header("Location: ".Url($Destination), TRUE, $SendCode);
       // Exit
       exit();
    }
@@ -1622,18 +2235,28 @@ if (!function_exists('ReflectArgs')) {
     */
    function ReflectArgs($Callback, $Args1, $Args2 = NULL) {
       $Result = array();
-
-      if (!method_exists($Controller, $Method))
-         return;
+      
+      if (is_string($Callback) && !function_exists($Callback))
+         throw new Exception("Function $Callback does not exist");
+      
+      if (is_array($Callback) && !method_exists($Callback[0], $Callback[1]))
+         throw new Exception("Method {$Callback[1]} does not exist.");
       
       if ($Args2 !== NULL)
          $Args1 = array_merge($Args2, $Args1);
       $Args1 = array_change_key_case($Args1);
 
-      if (is_string($Callback))
+      if (is_string($Callback)) {
          $Meth = new ReflectionFunction($Callback);
-      else
+         $MethName = $Meth;
+      } else {
          $Meth = new ReflectionMethod($Callback[0], $Callback[1]);
+         if (is_string($Callback[0])) {
+            $MethName = $Callback[0].'::'.$Meth->getName();
+         } else {
+            $MethName = get_class($Callback[0]).'->'.$Meth->getName();
+         }
+      }
       
       $MethArgs = $Meth->getParameters();
       
@@ -1646,15 +2269,26 @@ if (!function_exists('ReflectArgs')) {
          $ParamNameL = strtolower($ParamName);
 
          if (isset($Args1[$ParamNameL]))
-            $Args[$ParamName] = $Args1[$ParamNameL];
+            $ParamValue = $Args1[$ParamNameL];
          elseif (isset($Args1[$Index]))
-            $Args[$ParamName] = $Args1[$Index];
+            $ParamValue = $Args1[$Index];
          elseif ($MethParam->isDefaultValueAvailable())
-            $Args[$ParamName] = $MethParam->getDefaultValue();
+            $ParamValue = $MethParam->getDefaultValue();
          else {
-            $Args[$ParamName] = NULL;
-            $MissingArgs[] = "{$Index}: {$ParamName}";
+            $ParamValue = NULL;
+            $MissingArgs[] = '$'.$ParamName;
          }
+         
+         $Args[$ParamName] = $ParamValue;
+      }
+      
+      // Add optional parameters so that methods that use get_func_args() will still work.
+      for ($Index = count($Args); array_key_exists($Index, $Args1); $Index++) {
+         $Args[$Index] = $Args1[$Index];
+      }
+      
+      if (count($MissingArgs) > 0) {
+         trigger_error("$MethName() expects the following parameters: ".implode(', ', $MissingArgs).'.', E_USER_NOTICE);
       }
 
       return $Args;
@@ -1668,20 +2302,8 @@ if (!function_exists('RemoteIP')) {
 }
 
 if (!function_exists('RemoveFromConfig')) {
-   function RemoveFromConfig($Name) {
-      $Config = Gdn::Factory(Gdn::AliasConfig);
-      $Path = PATH_LOCAL_CONF.DS.'config.php';
-      $Config->Load($Path, 'Save');
-      if (!is_array($Name))
-         $Name = array($Name);
-      
-      foreach ($Name as $k) {
-         $Config->Remove($k);
-      }
-      $Result = $Config->Save($Path);
-      if ($Result)
-         $Config->Load($Path, 'Use');
-      return $Result;
+   function RemoveFromConfig($Name, $Options = array()) {
+      Gdn::Config()->RemoveFromConfig($Name, $Options);
    }
 }
 
@@ -1769,6 +2391,29 @@ if (!function_exists('SafeGlob')) {
    }
 }
 
+if (!function_exists('SafeImage')) {
+   /**
+    * Examines the provided url & checks to see if there is a valid image on the other side. Optionally you can specify minimum dimensions.
+    * @param string $ImageUrl Full url (including http) of the image to examine.
+    * @param int $MinHeight Minimum height (in pixels) of image. 0 means any height.
+    * @param int $MinWidth Minimum width (in pixels) of image. 0 means any width.
+    * @return mixed The url of the image if safe, FALSE otherwise.
+    */
+   function SafeImage($ImageUrl, $MinHeight = 0, $MinWidth = 0) {
+      try {
+         list($Width, $Height, $Type, $Attributes) = getimagesize($ImageUrl);
+         if ($MinHeight > 0 && $MinHeight < $Height)
+            return FALSE;
+         
+         if ($MinWidth > 0 && $MinWidth < $Width)
+            return FALSE;
+      } catch (Exception $ex) {
+         return FALSE;
+      }
+      return $ImageUrl;
+   }
+}
+
 if (!function_exists('SafeParseStr')) {
    function SafeParseStr($Str, &$Output, $Original = NULL) {
       $Exploded = explode('&',$Str);
@@ -1808,35 +2453,65 @@ if (!function_exists('SaveToConfig')) {
     * @return bool: Whether or not the save was successful. NULL if no changes were necessary.
     */
    function SaveToConfig($Name, $Value = '', $Options = array()) {
-      // Don't save the value if it hasn't changed.
-      /*
-      Tim: The world ain't ready for you yet, son
-      if (is_string($Name) && C($Name) == $Value)
-         return NULL;
-      */
+      Gdn::Config()->SaveToConfig($Name, $Value, $Options);
+   }
+}
+
+if (!function_exists('SliceParagraph')) {
+   /**
+    * Slices a string at a paragraph. 
+    * This function will attempt to slice a string at paragraph that is no longer than the specified maximum length.
+    * If it can't slice the string at a paragraph it will attempt to slice on a sentence.
+    * 
+    * Note that you should not expect this function to return a string that is always shorter than max-length.
+    * The purpose of this function is to provide a string that is reaonably easy to consume by a human.
+    * 
+    * @param string $String The string to slice.
+    * @param int $MaxLength The maximum length of the string.
+    * @param string $Suffix The suffix if the string must be sliced mid-sentence.
+    * @return string
+    */
+   function SliceParagraph($String, $MaxLength = 500, $Suffix = '…') {
+      if ($MaxLength >= strlen($String))
+         return $String;
       
-      $Save = $Options === FALSE ? FALSE : GetValue('Save', $Options, TRUE);
-      $RemoveEmpty = GetValue('RemoveEmpty', $Options);
-
-      $Config = Gdn::Factory(Gdn::AliasConfig);
-      $Path = PATH_LOCAL_CONF.DS.'config.php';
-      $Config->Load($Path, 'Save');
-
-      if (!is_array($Name))
-         $Name = array($Name => $Value);
-
-      foreach ($Name as $k => $v) {
-         if (!$v && $RemoveEmpty) {
-            $Config->Remove($k);
-         } else {
-            $Config->Set($k, $v, TRUE, $Save);
+//      $String = preg_replace('`\s+\n`', "\n", $String);
+      
+      // See if there is a paragraph.
+      $Pos = strrpos(SliceString($String, $MaxLength, ''), "\n\n");
+      
+      if ($Pos === FALSE) {
+         // There was no paragraph so try and split on sentences.
+         $Sentences = preg_split('`([.!?:]\s+)`', $String, NULL, PREG_SPLIT_DELIM_CAPTURE);
+         
+         $Result = '';
+         if (count($Sentences) > 1) {
+            $Result = $Sentences[0].$Sentences[1];
+            
+            for ($i = 2; $i < count($Sentences); $i++) {
+               $Sentence = $Sentences[$i];
+               
+               if ((strlen($Result) + strlen($Sentence)) <= $MaxLength || preg_match('`[.!?:]\s+`', $Sentence))
+                  $Result .= $Sentence;
+               else
+                  break;
+            }
          }
+         
+         if ($Result) {
+            return rtrim($Result);
+         }
+         
+         // There was no sentence. Slice off the last word and call it a day.
+         $Pos = strrpos(SliceString($String, $MaxLength, ''), ' ');
+         if ($Pos === FALSE) {
+            return $String.$Suffix;
+         } else {
+            return SliceString($String, $Pos + 1, $Suffix);
+         }
+      } else {
+         return substr($String, 0, $Pos + 1);
       }
-
-      if ($Save)
-         return $Config->Save($Path);
-      else
-         return TRUE;
    }
 }
 
@@ -1910,21 +2585,23 @@ if (!function_exists('SmartAsset')) {
 if (!function_exists('StringBeginsWith')) {
    /** Checks whether or not string A begins with string B.
     *
-    * @param string $A The main string to check.
-    * @param string $B The substring to check against.
+    * @param string $Haystack The main string to check.
+    * @param string $Needle The substring to check against.
     * @param bool $CaseInsensitive Whether or not the comparison should be case insensitive.
     * @param bool Whether or not to trim $B off of $A if it is found.
     * @return bool|string Returns true/false unless $Trim is true.
     */
-   function StringBeginsWith($A, $B, $CaseInsensitive = FALSE, $Trim = FALSE) {
-      if (strlen($A) < strlen($B))
-         return FALSE;
-      elseif (strlen($B) == 0)
-         return TRUE;
-      else {
-         $Result = substr_compare($A, $B, 0, strlen($B), $CaseInsensitive) == 0;
+   function StringBeginsWith($Haystack, $Needle, $CaseInsensitive = FALSE, $Trim = FALSE) {
+      if (strlen($Haystack) < strlen($Needle))
+         return $Trim ? $Haystack : FALSE;
+      elseif (strlen($Needle) == 0) {
          if ($Trim)
-            $Result = $Result ? substr($A, strlen($B)) : $A;
+            return $Haystack;
+         return TRUE;
+      } else {
+         $Result = substr_compare($Haystack, $Needle, 0, strlen($Needle), $CaseInsensitive) == 0;
+         if ($Trim)
+            $Result = $Result ? substr($Haystack, strlen($Needle)) : $Haystack;
          return $Result;
       }
    }
@@ -1933,21 +2610,23 @@ if (!function_exists('StringBeginsWith')) {
 if (!function_exists('StringEndsWith')) {
    /** Checks whether or not string A ends with string B.
     *
-    * @param string $A The main string to check.
-    * @param string $B The substring to check against.
+    * @param string $Haystack The main string to check.
+    * @param string $Needle The substring to check against.
     * @param bool $CaseInsensitive Whether or not the comparison should be case insensitive.
     * @param bool Whether or not to trim $B off of $A if it is found.
     * @return bool|string Returns true/false unless $Trim is true.
     */
-   function StringEndsWith($A, $B, $CaseInsensitive = FALSE, $Trim = FALSE) {
-      if (strlen($A) < strlen($B))
-         return FALSE;
-      elseif (strlen($B) == 0)
-         return TRUE;
-      else {
-         $Result = substr_compare($A, $B, -strlen($B), strlen($B), $CaseInsensitive) == 0;
+   function StringEndsWith($Haystack, $Needle, $CaseInsensitive = FALSE, $Trim = FALSE) {
+      if (strlen($Haystack) < strlen($Needle)) {
+         return $Trim ? $Haystack : FALSE;
+      } elseif (strlen($Needle) == 0) {
          if ($Trim)
-            $Result = $Result ? substr($A, 0, -strlen($B)) : $A;
+            return $Haystack;
+         return TRUE;
+      } else {
+         $Result = substr_compare($Haystack, $Needle, -strlen($Needle), strlen($Needle), $CaseInsensitive) == 0;
+         if ($Trim)
+            $Result = $Result ? substr($Haystack, 0, -strlen($Needle)) : $Haystack;
          return $Result;
       }
    }
@@ -2021,20 +2700,14 @@ if (!function_exists('TouchValue')) {
 	}
 }
 
-if (!function_exists('Translate')) {
-   /**
-	 * Translates a code into the selected locale's definition.
-	 *
-	 * @param string $Code The code related to the language-specific definition.
-    *   Codes thst begin with an '@' symbol are treated as literals and not translated.
-	 * @param string $Default The default value to be displayed if the translation code is not found.
-	 * @return string The translated string or $Code if there is no value in $Default.
-	 * @deprecated
-	 * @see Gdn::Translate()
-	 */
-   function Translate($Code, $Default = '') {
-      trigger_error('Translate() is deprecated. Use T() instead.', E_USER_DEPRECATED);
-      return Gdn::Translate($Code, $Default);
+if (!function_exists('Trace')) {
+   function Trace($Value = NULL, $Type = TRACE_INFO) {
+      static $Traces = array();
+      
+      if ($Value === NULL)
+         return $Traces;
+      
+      $Traces[] = array($Value, $Type);
    }
 }
 

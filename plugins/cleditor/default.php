@@ -38,12 +38,22 @@ some glitches.
 v0.5: 02NOV2010 - by Tim @ Vanilla
 - Fixed:
 -- 1. Added backreference to the cleditor JS object and attached it to the textarea, for external interaction
-*/
+ 
+v1.0.1 31AUG2011 - by Todd @ Vanilla
+- Fixed:
+-- 1. Fixed js error with new versions of jQuery.
+
+v1.1 14SEPT2011 - by Linc @ Vanilla
+-- Disabled CLEditor for IE6 or less if using Vanilla 2.0.18b5+.
+
+v1.1.1 28SEPT2011 - Linc
+-- Fixed infinite height loop confict with embed plugin.
+ */
 
 $PluginInfo['cleditor'] = array(
-   'Name' => 'CLEditor jQuery WYSIWYG',
-   'Description' => '<a href="http://premiumsoftware.net/cleditor/" target="_blank">CLEditor</a> jQuery WYSIWYG plugin for Vanilla 2.',
-   'Version' => '1.0',
+   'Name' => 'WYSIWYG (CLEditor)',
+   'Description' => 'Adds a <a href="http://en.wikipedia.org/wiki/WYSIWYG">WYSIWYG</a> editor to your forum so that your users can enter rich text comments.',
+   'Version' => '1.2',
    'Author' => "Mirabilia Media",
    'AuthorEmail' => 'info@mirabiliamedia.com',
    'AuthorUrl' => 'http://mirabiliamedia.com',
@@ -58,24 +68,50 @@ $PluginInfo['cleditor'] = array(
 
 class cleditorPlugin extends Gdn_Plugin {
 
-	public function PostController_Render_Before(&$Sender) {
-		$this->_AddCLEditor($Sender);
-	}
-	
-	public function DiscussionController_Render_Before(&$Sender) {
-		$this->_AddCLEditor($Sender);
-	}
+//	public function PostController_Render_Before($Sender) {
+//		$this->_AddCLEditor($Sender);
+//	}
+//	
+//	public function DiscussionController_Render_Before($Sender) {
+//		$this->_AddCLEditor($Sender);
+//	}
+   
+   /**
+    *
+    * @param Gdn_Form $Sender 
+    */
+   public function Gdn_Form_BeforeBodyBox_Handler($Sender, $Args) {
+      $this->_AddCLEditor(Gdn::Controller());
+      
+      $Format = $Sender->GetValue('Format');
+      
+      if ($Format) {
+         $Formatter = Gdn::Factory($Format.'Formatter');
+         
+         if ($Formatter && method_exists($Formatter, 'FormatForWysiwyg')) {
+            $Body = $Formatter->FormatForWysiwyg($Sender->GetValue('Body'));
+            $Sender->SetValue('Body', $Body);
+         } elseif (!in_array($Format, array('Html', 'Wysiwyg'))) {
+            $Sender->SetValue('Body', Gdn_Format::To($Sender->GetValue('Body'), $Format));
+         }
+      }
+      $Sender->SetValue('Format', 'Wysiwyg');
+   }
 	
 	private function _AddCLEditor($Sender) {
-		// Turn off safestyles so the inline styles get applied to comments
-		$Config = Gdn::Factory(Gdn::AliasConfig);
-		$Config->Set('Garden.Html.SafeStyles', FALSE);
-		
+      static $Added = FALSE;
+      if ($Added)
+         return;
+      
 		// Add the CLEditor to the form
+		$Options = array('ie' => 'gt IE 6', 'notie' => TRUE); // Exclude IE6
 		$Sender->RemoveJsFile('jquery.autogrow.js');
-		$Sender->AddJsFile('jquery.cleditor.min.js', 'plugins/cleditor');
-		$Sender->AddCssFile('jquery.cleditor.css', 'plugins/cleditor');
-		$Sender->Head->AddString('
+		$Sender->AddJsFile('jquery.cleditor'.(Debug() ? '' : '.min').'.js', 'plugins/cleditor', $Options);
+		$Sender->AddCssFile('jquery.cleditor.css', 'plugins/cleditor', $Options);
+      
+      $CssPath = Asset('/plugins/cleditor/design/cleditor.css');
+      
+		$Sender->Head->AddString(<<<EOT
 <style type="text/css">
 a.PreviewButton {
 	display: none !important;
@@ -88,17 +124,32 @@ a.PreviewButton {
 		// Attach the editor to comment boxes
 		jQuery("#Form_Body").livequery(function() {
 			var frm = $(this).parents("div.CommentForm");
-			ed = jQuery(this).cleditor({width:"100%", height:"100%"})[0];
+			ed = jQuery(this).cleditor({
+            width:"100%", height:"100%",
+            controls: "bold italic underline strikethrough | font size " +
+                    "style | color highlight removeformat | bullets numbering | outdent indent | " +
+                    "alignleft center alignright | undo redo | " +
+                    "image link unlink | cut copy paste pastetext | source",
+            docCSSFile: "$CssPath"
+         })[0];
 			this.editor = ed; // Support other plugins!
 			jQuery(frm).bind("clearCommentForm", {editor:ed}, function(e) {
 				frm.find("textarea").hide();
 				e.data.editor.clear();
 			});
 		});
-	})(jQuery);
-</script>');
+	});
+</script>
+EOT
+);
+      $Added = TRUE;
    }
 
-	public function Setup(){}
-
+	public function Setup() {
+      $this->Structure();
+   }
+   
+   public function Structure() {
+      SaveToConfig('Garden.Html.SafeStyles', FALSE);
+   }
 }

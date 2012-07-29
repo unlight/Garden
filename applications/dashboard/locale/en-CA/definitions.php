@@ -19,22 +19,17 @@ if (!function_exists('FormatPossessive')) {
    }
 }
 
-if (!function_exists('Plural')) {
-   function Plural($Number, $Singular, $Plural) {
-		// Make sure to fix comma-formatted numbers
-      $WorkingNumber = str_replace(',', '', $Number);
-      return sprintf(T($WorkingNumber == 1 ? $Singular : $Plural), $Number);
-   }
-}
-
 $Definition['Locale'] = 'en-CA';
 $Definition['_Locale'] = 'Locale';
+
+$Definition['Apply for Membership'] = 'Register';
 
 // THESE ARE RELATED TO VALIDATION FUNCTIONS IN /garden/library/core/validation.functions.php
 $Definition['ValidateRegex'] = '%s does not appear to be in the correct format.';
 $Definition['ValidateRequired'] = '%s is required.';
 $Definition['ValidateRequiredArray'] = 'You must select at least one %s.';
 $Definition['ValidateEmail'] = '%s does not appear to be valid.';
+$Definition['ValidateFormat'] = 'You are not allowed to post raw html.';
 $Definition['ValidateDate'] = '%s is not a valid date.';
 $Definition['ValidateInteger'] = '%s is not a valid integer.';
 $Definition['ValidateBoolean'] = '%s is not a valid boolean.';
@@ -50,10 +45,16 @@ $Definition['ValidateConnection'] = 'The connection parameters you specified fai
 $Definition['ValidateMatch'] = 'The %s fields do not match.';
 $Definition['ValidateVersion'] = 'The %s field is not a valid version number. See the php version_compare() function for examples of valid version numbers.';
 $Definition['ValidateBanned'] = 'That %s is not allowed.';
+$Definition['ValidateUrlStringRelaxed'] = '%s can not contain slashes, quotes or tag characters.';
 $Definition['ErrorPermission'] = 'Sorry, permission denied.';
 $Definition['InviteErrorPermission'] = 'Sorry, permission denied.';
+$Definition['PermissionRequired.Garden.Moderation.Manage'] = 'You need to be a moderator to do that.';
+$Definition['PermissionRequired.Garden.Settings.Manage'] = 'You need to be an administrator to do that.';
+$Definition['PermissionRequired.Javascript'] = 'You need to enable javascript to do that.';
 $Definition['ErrorBadInvitationCode'] = 'The invitation code you supplied is not valid.';
 $Definition['ErrorCredentials'] = 'Sorry, no account could be found related to the email/username and password you entered.';
+$Definition['User not found.'] = 'Sorry, no account could be found related to the email/username you entered.';
+$Definition['Invalid password.'] = 'The password you entered was incorrect. Remember that passwords are case-sensitive.';
 $Definition['ErrorPluginVersionMatch'] = 'The enabled {0} plugin (version {1}) failed to meet the version requirements ({2}).';
 $Definition['ErrorPluginDisableRequired'] = 'You cannot disable the {0} plugin because the {1} plugin requires it in order to function.';
 $Definition['ErrorPluginEnableRequired'] = 'This plugin requires that the {0} plugin be enabled before it can be enabled itself.';
@@ -97,19 +98,19 @@ $Definition['EmailPassword'] = '%2$s has reset your password at %3$s. Your login
   Email: %6$s
   Password: %5$s
   Url: %4$s';
-$Definition['EmailConfirmEmail'] = 'You need to confirm your email address before you can continue. Please confirm your email address by clicking on the following link: {/entry/emailconfirm,url,domain}/{User.UserID,rawurlencode}/{EmailKey,rawurlencode}';
+$Definition['EmailConfirmEmail'] = 'You need to confirm your email address before you can continue. Please confirm your email address by clicking on the following link: {/entry/emailconfirm,exurl,domain}/{User.UserID,rawurlencode}/{EmailKey,rawurlencode}';
 $Definition['EmailWelcomeRegister'] = 'You have successfully registered for an account at {Title}. Here is your information:
 
   Username: {User.Name}
   Email: {User.Email}
 
-You can access the site at {/,url,domain}.';
+You can access the site at {/,exurl,domain}.';
 $Definition['EmailWelcomeConnect'] = 'You have successfully connected to {Title}. Here is your information:
 
   Username: {User.Name}
   Connected With: {ProviderName}
 
-You can access the site at {/,url,domain}.';
+You can access the site at {/,exurl,domain}.';
 $Definition['PasswordRequest'] = 'Someone has requested to reset your password at %2$s. To reset your password, follow this link:
 
   %3$s
@@ -138,9 +139,9 @@ $Definition['Date.DefaultFormat'] = '%B %e, %Y';
 $Definition['Date.DefaultDayFormat'] = '%B %e';
 $Definition['Date.DefaultYearFormat'] = '%B %Y';
 $Definition['Date.DefaultTimeFormat'] = '%l:%M%p';
+$Definition['Date.DefaultDateTimeFormat'] = '%B %e, %Y %l:%M%p';
 $Definition['Saved'] = 'Your changes have been saved.';
-$Definition['%s New Plural'] = '%s new';
-
+$Definition['%s new plural'] = '%s new';
 $Definition['TermsOfService'] = 'Terms of Service';
 $Definition['TermsOfServiceText'] = "
    <p>You agree, through your use of this service, that you will not use this
@@ -168,5 +169,10 @@ $Definition['TermsOfServiceText'] = "
 $Definition['Warning: This is for advanced users.'] = '<b>Warning</b>: This is for advanced users and requires that you make additional changes to your web server. This is usually only available if you have dedicated or vps hosting. Do not attempt this if you do not know what you are doing.';
 $Definition['Activity.Delete'] = '×';
 $Definition['Draft.Delete'] = '×';
+$Definition['ConnectName'] = 'Username';
+//$Definition['EmbededDiscussionFormat'] = '<div class="EmbeddedContent">{Image}<strong>{Title}</strong>
+//<p>{Excerpt}</p>
+//<p><a href="{Url}">Read the full story here</a></p><div class="ClearFix"></div></div>';
+
 
 // TODO: PROVIDE TRANSLATIONS FOR ALL CONFIGURATION SETTINGS THAT ARE EDITABLE ON ADMIN FORMS (ie. Vanilla.Comments.MaxLength, etc).

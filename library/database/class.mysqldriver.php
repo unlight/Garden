@@ -1,16 +1,7 @@
 <?php if (!defined('APPLICATION')) exit();
-/*
-Copyright 2008, 2009 Vanilla Forums Inc.
-This file is part of Garden.
-Garden is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
-Garden is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
-You should have received a copy of the GNU General Public License along with Garden.  If not, see <http://www.gnu.org/licenses/>.
-Contact Vanilla Forums Inc. at support [at] vanillaforums [dot] com
-*/
 
 /**
- * The MySQLDriver class is a MySQL-specific class for manipulating
- * database information.
+ * MySQL database driver
  *
  * The MySQLDriver class can be treated as an interface for all database
  * engines. Any new database engine should have the same public and protected
@@ -20,12 +11,11 @@ Contact Vanilla Forums Inc. at support [at] vanillaforums [dot] com
  * This class is HEAVILY inspired by and, in places, flat out copied from
  * CodeIgniter (http://www.codeigniter.com). My hat is off to them.
  *
- * @author Mark O'Sullivan
- * @copyright 2003 Mark O'Sullivan
+ * @author Todd Burry <todd@vanillaforums.com> 
+ * @copyright 2003 Vanilla Forums, Inc
  * @license http://www.opensource.org/licenses/gpl-2.0.php GPL
  * @package Garden
- * @version @@GARDEN-VERSION@@
- * @namespace Garden.Database
+ * @since 2.0
  */
 
 class Gdn_MySQLDriver extends Gdn_SQLDriver {
@@ -33,6 +23,10 @@ class Gdn_MySQLDriver extends Gdn_SQLDriver {
 // =============================================================================
 // SECTION 1. STRING SAFETY, PARSING, AND MANIPULATION.
 // =============================================================================
+   
+   public function Backtick($String) {
+      return '`'.trim($String, '`').'`';
+   }
 
    /**
     * Takes a string of SQL and adds backticks if necessary.
@@ -258,7 +252,8 @@ class Gdn_MySQLDriver extends Gdn_SQLDriver {
       } else {
          if(array_key_exists(0, $Data)) {
             // This is a big insert with a bunch of rows.
-            $Sql .= "\n(".implode(', ', array_keys($Data[0])).') '
+            $Keys = array_keys($Data[0]); $Keys = array_map(array($this, 'Backtick'), $Keys);
+            $Sql .= "\n(".implode(', ', $Keys).') '
                ."\nvalues ";
             
             // Append each insert statement.
@@ -268,7 +263,8 @@ class Gdn_MySQLDriver extends Gdn_SQLDriver {
                $Sql .= "\n('".implode('\', \'', array_values($Data[$i])).'\')';
             }
          } else {
-            $Sql .= "\n(".implode(', ', array_keys($Data)).') '
+            $Keys = array_keys($Data); $Keys = array_map(array($this, 'Backtick'), $Keys);
+            $Sql .= "\n(".implode(', ', $Keys).') '
             ."\nvalues (".implode(', ', array_values($Data)).')';
          }
       }
@@ -306,7 +302,7 @@ class Gdn_MySQLDriver extends Gdn_SQLDriver {
          $Sets[] = $Field." = ".$Value;
       }
 
-      $sql = 'update '.$this->_FromTables($Tables);
+      $sql = 'update '.($this->Options('Ignore') ? 'ignore ' : '').$this->_FromTables($Tables);
 
       if (count($this->_Joins) > 0) {
          $sql .= "\n";
@@ -316,7 +312,7 @@ class Gdn_MySQLDriver extends Gdn_SQLDriver {
          $sql .= implode("\n", $this->_Joins);
       }
 
-      $sql .= " set \n ".implode(",\n ", $Sets);
+      $sql .= "\nset ".implode(",\n ", $Sets);
       if (is_array($Where) && count($Where) > 0) {
          $sql .= "\nwhere ".implode("\n ", $Where);
 

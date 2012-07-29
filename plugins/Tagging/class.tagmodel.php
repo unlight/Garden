@@ -66,8 +66,8 @@ class TagModel extends Gdn_Model {
    }
 
    public static function ValidateTag($Tag) {
-      // Tags can't contain whitespace.
-      if (preg_match('`\s`', $Tag))
+      // Tags can't contain commas.
+      if (preg_match('`,`', $Tag))
          return FALSE;
       return TRUE;
    }
@@ -84,13 +84,14 @@ class TagModel extends Gdn_Model {
    }
 
    public static function SplitTags($TagsString) {
-      $Tags = preg_split('`[\s]`', $TagsString);
+      $Tags = preg_split('`[,]`', $TagsString);
       // Trim each tag.
       foreach ($Tags as $Index => $Tag) {
          $Tag = trim($Tag);
          if (!$Tag)
             unset($Tags[$Index]);
-         $Tags[$Index] = $Tag;
+         else
+            $Tags[$Index] = $Tag;
       }
       $Tags = array_unique($Tags);
       return $Tags;

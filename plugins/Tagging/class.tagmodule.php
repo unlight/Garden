@@ -25,12 +25,13 @@ class TagModule extends Gdn_Module {
          $this->_DiscussionID = $DiscussionID;
          $SQL->Join('TagDiscussion td', 't.TagID = td.TagID')
             ->Where('td.DiscussionID', $DiscussionID);
+      } else {
+         $SQL->Where('t.CountDiscussions >', 0, FALSE);
       }
             
       $this->_TagData = $SQL
          ->Select('t.*')
          ->From('Tag t')
-         ->Where('t.CountDiscussions >', 0, FALSE)
          ->OrderBy('t.CountDiscussions', 'desc')
          ->Limit(25)
          ->Get();
@@ -39,28 +40,59 @@ class TagModule extends Gdn_Module {
    public function AssetTarget() {
       return 'Panel';
    }
+   
+   public function InlineDisplay() {
+      if ($this->_TagData->NumRows() == 0)
+         return '';
+      $String = '';
+      ob_start();
+      ?>
+      <div class="InlineTags Meta">
+         <?php echo T('Tagged'); ?>:
+         <ul>
+         <?php
+         foreach ($this->_TagData->Result() as $Tag) {
+            if ($Tag->Name != '') {
+         ?>
+            <li><?php 
+               if (urlencode($Tag->Name) == $Tag->Name) {
+                  echo Anchor(htmlspecialchars($Tag->Name), 'discussions/tagged/'.urlencode($Tag->Name));
+               } else {
+                  echo Anchor(htmlspecialchars($Tag->Name), 'discussions/tagged?Tag='.urlencode($Tag->Name));
+               }
+            ?></li>
+         <?php
+            }
+         }
+         ?>
+         </ul>
+      </div>
+      <?php
+      $String = ob_get_contents();
+      @ob_end_clean();
+      return $String;
+   }
 
    public function ToString() {
       if ($this->_TagData->NumRows() == 0)
          return '';
-      
       $String = '';
       ob_start();
       ?>
       <div class="Box Tags">
          <h4><?php echo T($this->_DiscussionID > 0 ? 'Tagged' : 'Popular Tags'); ?></h4>
-         <ul class="PanelInfo">
+         <ul class="TagCloud">
          <?php
          foreach ($this->_TagData->Result() as $Tag) {
             if ($Tag->Name != '') {
          ?>
-            <li><strong><?php 
+            <li><span><?php 
                            if (urlencode($Tag->Name) == $Tag->Name) {
                               echo Anchor(htmlspecialchars($Tag->Name), 'discussions/tagged/'.urlencode($Tag->Name));
                            } else {
                               echo Anchor(htmlspecialchars($Tag->Name), 'discussions/tagged?Tag='.urlencode($Tag->Name));
                            }
-                        ?></strong><span class="Count"><?php echo number_format($Tag->CountDiscussions); ?></span></li>
+                        ?></span> <span class="Count"><?php echo number_format($Tag->CountDiscussions); ?></span></li>
          <?php
             }
          }

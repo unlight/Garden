@@ -1,26 +1,29 @@
 <?php if (!defined('APPLICATION')) exit();
-/*
-Copyright 2008, 2009 Vanilla Forums Inc.
-This file is part of Garden.
-Garden is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
-Garden is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
-You should have received a copy of the GNU General Public License along with Garden.  If not, see <http://www.gnu.org/licenses/>.
-Contact Vanilla Forums Inc. at support [at] vanillaforums [dot] com
-*/
-
 
 /**
+ * Object factory
+ * 
  * A factory used to create most objects in the core library.
  * If you have your own object that implements some base portion of the library you can install it in the factory
  * make sure your own object has the same properties/methods as the core object and then install it into this factory.
  *
- * @todo Localize the exception in this class.
+ * @author Todd Burry <todd@vanillaforums.com> 
+ * @author Tim Gunter <tim@vanillaforums.com>
+ * @copyright 2003 Vanilla Forums, Inc
+ * @license http://www.opensource.org/licenses/gpl-2.0.php GPL
+ * @package Garden
+ * @since 2.0
  */
+
 class Gdn_Factory {
    /** @var array The object definitions for the factory. */
    protected $_Objects = array();
    /** @var array The property dependancies for the factory. */
    protected $_Dependencies = array();
+   
+   public function __construct() {
+      register_shutdown_function(array($this, 'Cleanup'));
+   }
    
    /**
     * Checks whether or not a factory alias exists.
@@ -242,8 +245,28 @@ class Gdn_Factory {
     * @param string $Alias The object alias to uninstall.
     */
    public function Uninstall($Alias) {
-      if(array_key_exists($this->_Objects, $Alias))
+      if(array_key_exists($Alias, $this->_Objects))
          unset($this->_Objects[$Alias]);
+   }
+   
+   /**
+    * Clean up the factory's objects
+    * 
+    * Also calls 'Cleanup' on compatible instances.
+    */
+   public function Cleanup() {
+      foreach ($this->_Objects as $FactoryInstanceName => &$FactoryInstance) {
+         if (!is_array($FactoryInstance)) continue;
+         $FactoryType = $FactoryInstance['FactoryType'];
+         
+         if (!array_key_exists($FactoryType, $FactoryInstance)) continue;
+         $FactoryObject = &$FactoryInstance[$FactoryType];
+         
+         if (method_exists($FactoryObject, 'Cleanup'))
+            $FactoryObject->Cleanup();
+         
+         unset($FactoryInstance);
+      }
    }
    
    /** 
@@ -254,7 +277,7 @@ class Gdn_Factory {
     * Note: If $PropertyName is null then all of the dependencies will be uninstalled for $Alias.
     */
    public function UninstallDependency($Alias, $PropertyName = NULL) {
-      if(array_key_exists($this->_Dependencies, $Alias)) {
+      if(array_key_exists($Alias, $this->_Dependencies)) {
          if(is_null($PropertyName))
             unset($this->_Dependencies[$Alias]);
          elseif(array_key_exists($PropertyName, $this->_Dependencies[$Alias]))

@@ -1,5 +1,6 @@
 <?php if (!defined('APPLICATION')) exit();
 $this->RenderAsset('Messages');
+/*
 ?>
 <div class="Column Column1">
    <h1><?php echo T("What's the Buzz?"); ?></h1>
@@ -24,6 +25,9 @@ $this->RenderAsset('Messages');
       </tbody>
    </table>
 </div>
+ * 
+ */
+?>
 <div class="Column Column2">
    <h1><?php echo T('Recently Active Users'); ?></h1>
    <table id="RecentUsers" border="0" cellpadding="0" cellspacing="0" class="AltColumns">
@@ -59,9 +63,5 @@ $this->RenderAsset('Messages');
 </div>
 <div class="Column Column1 NewsColumn">
    <h1><?php echo T('Recent News'); ?></h1>
-   <div class="List"></div>
-</div>
-<div class="Column Column2 HelpColumn">
-   <h1><?php echo T('Recent Tutorials'); ?></h1>
    <div class="List"></div>
 </div>

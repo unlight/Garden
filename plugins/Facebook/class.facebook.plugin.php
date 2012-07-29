@@ -10,9 +10,9 @@ Contact Vanilla Forums Inc. at support [at] vanillaforums [dot] com
 
 // Define the plugin:
 $PluginInfo['Facebook'] = array(
-	'Name' => 'Facebook',
-   'Description' => 'This plugin integrates Vanilla with Facebook. <b>You must register your application with Facebook for this plugin to work.</b>',
-   'Version' => '0.1a',
+	'Name' => 'Facebook Sign In',
+   'Description' => 'Users may sign into your site using their Facebook account. <b>You must register your application with Facebook for this plugin to work.</b>',	
+   'Version' => '1.0.1',
    'RequiredApplications' => array('Vanilla' => '2.0.14a'),
    'RequiredTheme' => FALSE,
    'RequiredPlugins' => FALSE,
@@ -57,10 +57,10 @@ class FacebookPlugin extends Gdn_Plugin {
          return;
       
       if (isset($Sender->Data['Methods'])) {
-         $AccessToken = $this->AccessToken();
+//         $AccessToken = $this->AccessToken();
 
          $ImgSrc = Asset('/plugins/Facebook/design/facebook-login.png');
-         $ImgAlt = T('Login with Facebook');
+         $ImgAlt = T('Sign In with Facebook');
 
 //         if ($AccessToken) {
 //            $SigninHref = $this->RedirectUri();
@@ -76,11 +76,18 @@ class FacebookPlugin extends Gdn_Plugin {
             // Add the facebook method to the controller.
             $FbMethod = array(
                'Name' => 'Facebook',
-               'SignInHtml' => "<a id=\"FacebookAuth\" href=\"$SigninHref\" class=\"PopupWindow\" popupHref=\"$PopupSigninHref\" popupHeight=\"326\" popupWidth=\"627\" ><img src=\"$ImgSrc\" alt=\"$ImgAlt\" /></a>");
+               'SignInHtml' => "<a id=\"FacebookAuth\" href=\"$SigninHref\" class=\"PopupWindow\" popupHref=\"$PopupSigninHref\" popupHeight=\"326\" popupWidth=\"627\" rel=\"nofollow\" ><img src=\"$ImgSrc\" alt=\"$ImgAlt\" /></a>");
 //         }
 
          $Sender->Data['Methods'][] = $FbMethod;
       }
+   }
+   
+   public function Base_SignInIcons_Handler($Sender, $Args) {
+      if (!$this->IsConfigured())
+         return;
+		
+		echo "\n".$this->_GetButton();
    }
 
    public function Base_BeforeSignInButton_Handler($Sender, $Args) {
@@ -103,10 +110,10 @@ class FacebookPlugin extends Gdn_Plugin {
 	
 	private function _GetButton() {
       $ImgSrc = Asset('/plugins/Facebook/design/facebook-icon.png');
-      $ImgAlt = T('Login with Facebook');
+      $ImgAlt = T('Sign In with Facebook');
       $SigninHref = $this->AuthorizeUri();
       $PopupSigninHref = $this->AuthorizeUri('display=popup');
-      return "<a id=\"FacebookAuth\" href=\"$SigninHref\" class=\"PopupWindow\" title=\"$ImgAlt\" popupHref=\"$PopupSigninHref\" popupHeight=\"326\" popupWidth=\"627\" ><img src=\"$ImgSrc\" alt=\"$ImgAlt\" align=\"bottom\" /></a>";
+      return "<a id=\"FacebookAuth\" href=\"$SigninHref\" class=\"PopupWindow\" title=\"$ImgAlt\" popupHref=\"$PopupSigninHref\" popupHeight=\"326\" popupWidth=\"627\" rel=\"nofollow\" ><img src=\"$ImgSrc\" alt=\"$ImgAlt\" align=\"bottom\" /></a>";
    }
 	
    public function SettingsController_Facebook_Create($Sender, $Args) {
@@ -114,7 +121,9 @@ class FacebookPlugin extends Gdn_Plugin {
       if ($Sender->Form->IsPostBack()) {
          $Settings = array(
              'Plugins.Facebook.ApplicationID' => $Sender->Form->GetFormValue('ApplicationID'),
-             'Plugins.Facebook.Secret' => $Sender->Form->GetFormValue('Secret'));
+             'Plugins.Facebook.Secret' => $Sender->Form->GetFormValue('Secret'),
+             'Plugins.Facebook.UseFacebookNames' => $Sender->Form->GetFormValue('UseFacebookNames'),
+             'Garden.Registration.SendConnectEmail' => $Sender->Form->GetFormValue('SendConnectEmail'));
 
          SaveToConfig($Settings);
          $Sender->InformMessage(T("Your settings have been saved."));
@@ -122,6 +131,8 @@ class FacebookPlugin extends Gdn_Plugin {
       } else {
          $Sender->Form->SetFormValue('ApplicationID', C('Plugins.Facebook.ApplicationID'));
          $Sender->Form->SetFormValue('Secret', C('Plugins.Facebook.Secret'));
+         $Sender->Form->SetFormValue('UseFacebookNames', C('Plugins.Facebook.UseFacebookNames'));
+         $Sender->Form->SetFormValue('SendConnectEmail', C('Garden.Registration.SendConnectEmail', TRUE));
       }
 
       $Sender->AddSideMenu();
@@ -165,6 +176,7 @@ class FacebookPlugin extends Gdn_Plugin {
          curl_setopt($C, CURLOPT_SSL_VERIFYPEER, FALSE);
          curl_setopt($C, CURLOPT_URL, $Url);
          $Contents = curl_exec($C);
+//         $Contents = ProxyRequest($Url);
          $Info = curl_getinfo($C);
          if (strpos(GetValue('content_type', $Info, ''), '/javascript') !== FALSE) {
             $Tokens = json_decode($Contents, TRUE);
@@ -179,7 +191,7 @@ class FacebookPlugin extends Gdn_Plugin {
          $AccessToken = GetValue('access_token', $Tokens);
          $Expires = GetValue('expires', $Tokens, NULL);
 
-         setcookie('fb_access_token', $AccessToken, time() + $Expires, C('Garden.Cookie.Path', '/'), C('Garden.Cookie.Domain', ''));
+         setcookie('fb_access_token', $AccessToken, time() + $Expires, C('Garden.Cookie.Path', '/'), C('Garden.Cookie.Domain', ''), NULL, TRUE);
          $NewToken = TRUE;
       }
 
@@ -209,12 +221,33 @@ class FacebookPlugin extends Gdn_Plugin {
       $Form->SetFormValue('FullName', GetValue('name', $Profile));
       $Form->SetFormValue('Email', GetValue('email', $Profile));
       $Form->SetFormValue('Photo', "http://graph.facebook.com/$ID/picture");
+      
+      if (C('Plugins.Facebook.UseFacebookNames')) {
+         $Form->SetFormValue('Name', GetValue('name', $Profile));
+         SaveToConfig(array(
+             'Garden.User.ValidationRegex' => UserModel::USERNAME_REGEX_MIN,
+             'Garden.User.ValidationLength' => '{3,50}',
+             'Garden.Registration.NameUnique' => FALSE
+         ), '', FALSE);
+      }
+      
+      // Save some original data in the attributes of the connection for later API calls.
+      $Attributes = array(
+          'Facebook.Profile' => $Profile
+      );
+      $Form->SetFormValue('Attributes', $Attributes);
+      
       $Sender->SetData('Verified', TRUE);
    }
 
    public function GetProfile($AccessToken) {
       $Url = "https://graph.facebook.com/me?access_token=$AccessToken";
-
+//      $C = curl_init();
+//      curl_setopt($C, CURLOPT_RETURNTRANSFER, TRUE);
+//      curl_setopt($C, CURLOPT_SSL_VERIFYPEER, FALSE);
+//      curl_setopt($C, CURLOPT_URL, $Url);
+//      $Contents = curl_exec($C);
+//      $Contents = ProxyRequest($Url);
       $Contents = file_get_contents($Url);
       $Profile = json_decode($Contents, TRUE);
       return $Profile;
@@ -249,7 +282,13 @@ class FacebookPlugin extends Gdn_Plugin {
          }
 
          $Path = Gdn::Request()->Path();
-         $Args = array('Target' => GetValue('Target', $_GET, $Path ? $Path : '/'));
+
+         $Target = GetValue('Target', $_GET, $Path ? $Path : '/');
+         if (ltrim($Target, '/') == 'entry/signin' || empty($Target))
+            $Target = '/';
+         $Args = array('Target' => $Target);
+
+
          $RedirectUri .= strpos($RedirectUri, '?') === FALSE ? '?' : '&';
          $RedirectUri .= http_build_query($Args);
          $this->_RedirectUri = $RedirectUri;
@@ -268,18 +307,19 @@ class FacebookPlugin extends Gdn_Plugin {
    
    public function Setup() {
       $Error = '';
-      if (!ini_get('allow_url_fopen'))
-         $Error = ConcatSep("\n", $Error, 'This plugin requires the allow_url_fopen php.ini setting.');
       if (!function_exists('curl_init'))
          $Error = ConcatSep("\n", $Error, 'This plugin requires curl.');
       if ($Error)
          throw new Gdn_UserException($Error, 400);
 
+      $this->Structure();
+   }
 
+   public function Structure() {
       // Save the facebook provider type.
       Gdn::SQL()->Replace('UserAuthenticationProvider',
          array('AuthenticationSchemeAlias' => 'facebook', 'URL' => '...', 'AssociationSecret' => '...', 'AssociationHashMethod' => '...'),
-         array('AuthenticationKey' => 'Facebook'));
+         array('AuthenticationKey' => 'Facebook'), TRUE);
    }
 
    public function OnDisable() {

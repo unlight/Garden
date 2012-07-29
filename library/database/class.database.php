@@ -1,22 +1,16 @@
 <?php if (!defined('APPLICATION')) exit();
-/*
-Copyright 2008, 2009 Vanilla Forums Inc.
-This file is part of Garden.
-Garden is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
-Garden is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
-You should have received a copy of the GNU General Public License along with Garden.  If not, see <http://www.gnu.org/licenses/>.
-Contact Vanilla Forums Inc. at support [at] vanillaforums [dot] com
-*/
 
 /**
+ * Database manager
+ * 
  * The Database object contains connection and engine information for a single database.
  * It also allows a database to execute string sql statements against that database.
- *
- * @author Todd Burry
- * @copyright 2003 Mark O'Sullivan
+ * 
+ * @author Todd Burry <todd@vanillaforums.com>
+ * @copyright 2003 Vanilla Forums, Inc
  * @license http://www.opensource.org/licenses/gpl-2.0.php GPL
- * @version @@GARDEN-VERSION@@
- * @namespace Garden.Database
+ * @package Garden
+ * @since 2.0
  */
 
 class Gdn_Database {
@@ -97,7 +91,7 @@ class Gdn_Database {
     * Begin a transaction on the database.
     */
    public function BeginTransaction() {
-      if(!$this->_InTransaction)
+      if (!$this->_InTransaction)
          $this->_InTransaction = $this->Connection()->beginTransaction();
    }
    
@@ -109,12 +103,19 @@ class Gdn_Database {
    }
    
    /**
+    * Hook for cleanup via Gdn_Factory 
+    * 
+    */
+   public function Cleanup() {
+      $this->CloseConnection();
+   }
+   
+   /**
     * Commit a transaction on the database.
     */
    public function CommitTransaction() {
-      if($this->_InTransaction) {
+      if ($this->_InTransaction)
          $this->_InTransaction = !$this->Connection()->commit();
-      }
    }
 	
 	/**
@@ -223,7 +224,7 @@ class Gdn_Database {
          // Check to see if the query is cached.
          $CacheKeys = (array)GetValue('Cache',$Options,NULL);
          $CacheOperation = GetValue('CacheOperation',$Options,NULL);
-         if (is_null($CacheOperation))
+         if (is_null($CacheOperation)) {
             switch ($ReturnType) {
                case 'DataSet':
                   $CacheOperation = 'get';
@@ -233,6 +234,7 @@ class Gdn_Database {
                   $CacheOperation = 'remove';
                   break;
             }
+         }
          
          switch ($CacheOperation) {
             case 'get':
@@ -258,7 +260,7 @@ class Gdn_Database {
             
             case 'remove':
                foreach ($CacheKeys as $CacheKey) {
-                  Gdn::Cache()->Remove($CacheKey);
+                  $Res = Gdn::Cache()->Remove($CacheKey);
                }
                break;
          }

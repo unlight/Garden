@@ -24,13 +24,13 @@ class UserMetaModel extends Gdn_Model {
    public function __construct() {
       
       self::$MemoryCache = array();
-      
-      // We don't need this yet
-      //parent::__construct('UserMeta');
+      parent::__construct('UserMeta');
+      $this->SQL = clone Gdn::SQL();
+      $this->SQL->Reset();
    }
    
    /**
-    * Retries UserMeta information for a UserID / Key pair
+    * Retrieves UserMeta information for a UserID / Key pair
     * 
     * This method takes a $UserID or array of $UserIDs, and a $Key. It converts the
     * $Key to fully qualified format and then queries for the associated value(s). $Key
@@ -48,8 +48,48 @@ class UserMetaModel extends Gdn_Model {
     * @param $Default optional default return value if key is not found
     * @return array results or $Default
     */
-   public function GetUserMeta($UserID, $Key, $Default = NULL) {
-      $UserMetaQuery = Gdn::SQL()
+   public function GetUserMeta($UserID, $Key = NULL, $Default = NULL) {
+      if (Gdn::Cache()->ActiveEnabled()) {
+         if (is_array($UserID)) {
+            $Result = array();
+            foreach ($UserID as $ID) {
+               $Meta = $this->GetUserMeta($ID, $Key, $Default);
+               $Result[$ID] = $Meta;
+            }
+            return $Result;
+         }
+         
+         // Try and grab the user meta from the cache.
+         $CacheKey = 'UserMeta_'.$UserID;
+         $UserMeta = Gdn::Cache()->Get($CacheKey);
+         
+         if ($UserMeta === Gdn_Cache::CACHEOP_FAILURE) {
+            $UserMeta = $this->GetWhere(array('UserID' => $UserID), 'Name')->ResultArray();
+            $UserMeta = ConsolidateArrayValuesByKey($UserMeta, 'Name', 'Value');
+            Gdn::Cache()->Store($CacheKey, $UserMeta);
+         }
+         
+         if ($Key === NULL)
+            return $UserMeta;
+         
+         if (strpos($Key, '%') === FALSE) {
+            $Result = GetValue($Key, $UserMeta, $Default);
+            return array($Key => $Result);
+         }
+         
+         $Regex = '`'.str_replace('%', '.*', preg_quote($Key)).'`i';
+         
+         $Result = array();
+         foreach ($UserMeta as $Name => $Value) {
+            if (preg_match($Regex, $Name))
+               $Result[$Name] = $Value;
+         }
+         return $Result;
+      }
+      
+      $Sql = clone Gdn::SQL();
+      $Sql->Reset();
+      $UserMetaQuery = $Sql
          ->Select('*')
          ->From('UserMeta u');
          
@@ -59,7 +99,7 @@ class UserMetaModel extends Gdn_Model {
          $UserMetaQuery->Where('u.UserID', $UserID);
       
       if (stristr($Key, '%'))
-         $UserMetaQuery->Like('u.Name', $Key);
+         $UserMetaQuery->Where('u.Name like', $Key);
       else
          $UserMetaQuery->Where('u.Name', $Key);
       
@@ -99,6 +139,37 @@ class UserMetaModel extends Gdn_Model {
     * @return void
     */
    public function SetUserMeta($UserID, $Key, $Value = NULL) {
+      if (Gdn::Cache()->ActiveEnabled()) {
+         if (is_array($UserID)) {
+            foreach ($UserID as $ID) {
+               $this->SetUserMeta($ID, $Key, $Value);
+            }
+            return;
+         }
+         
+         $UserMeta = $this->GetUserMeta($UserID);
+         if ($Value === NULL)
+            unset($UserMeta[$Key]);
+         else
+            $UserMeta[$Key] = $Value;
+         
+         $CacheKey = 'UserMeta_'.$UserID;
+         Gdn::Cache()->Store($CacheKey, $UserMeta);
+         
+         // Update the DB.
+         if ($Value === NULL) {
+            $this->SQL->Delete('UserMeta', array('UserID' => $UserID, 'Name' => $Key));
+         } else {
+            $Px = $this->SQL->Database->DatabasePrefix;
+            $Sql = "insert {$Px}UserMeta (UserID, Name, Value) values(:UserID, :Name, :Value) on duplicate key update Value = :Value1";
+            $Params = array(':UserID' => $UserID, ':Name' => $Key, ':Value' => $Value, ':Value1' => $Value);
+            $this->Database->Query($Sql, $Params);
+         }
+         
+         return;
+      }
+      
+      
       if (is_null($Value)) {  // Delete
          $UserMetaQuery = Gdn::SQL();
             

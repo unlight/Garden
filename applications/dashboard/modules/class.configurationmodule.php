@@ -37,7 +37,7 @@ class ConfigurationModule extends Gdn_Module {
    /**
     * @param Gdn_Controller $Controller The controller using this model.
     */
-   public function __construct($Sender) {
+   public function __construct($Sender = NULL) {
       parent::__construct($Sender);
 
       if (property_exists($Sender, 'Form'))
@@ -102,9 +102,14 @@ class ConfigurationModule extends Gdn_Module {
          return $SchemaRow['LabelCode'];
 
       $LabelCode = trim(strrchr($SchemaRow['Name'], '.'), '.');
+
       // Split camel case labels into seperate words.
-      $LabelCode = preg_replace('`(?<![A-Z])([A-Z])`', ' $1', $LabelCode);
+      $LabelCode = preg_replace('`(?<![A-Z0-9])([A-Z0-9])`', ' $1', $LabelCode);
+      $LabelCode = preg_replace('`([A-Z0-9])(?=[a-z])`', ' $1', $LabelCode);
       $LabelCode = trim($LabelCode);
+      
+      $LabelCode = StringEndsWith($LabelCode, " ID", TRUE, TRUE);
+
       return $LabelCode;
    }
 

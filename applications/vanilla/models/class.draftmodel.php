@@ -38,7 +38,7 @@ class DraftModel extends VanillaModel {
     */
    public function DraftQuery() {
       $this->SQL
-         ->Select()
+         ->Select('d.*')
          ->From('Draft d');
    }
    
@@ -63,7 +63,6 @@ class DraftModel extends VanillaModel {
          
       $this->DraftQuery();
       $this->SQL
-         ->Select('d.DateInserted, d.Body')
          ->Select('d.Name, di.Name', 'coalesce', 'Name')
          ->Join('Discussion di', 'd.discussionID = di.DiscussionID', 'left')
          ->Where('d.InsertUserID', $UserID)
@@ -222,13 +221,9 @@ class DraftModel extends VanillaModel {
    public function UpdateUser($UserID) {
       // Retrieve a draft count
       $CountDrafts = $this->GetCount($UserID);
-         
-      // Save to the attributes column of the user table for this user.
-      $this->SQL
-         ->Update('User')
-         ->Set('CountDrafts', $CountDrafts)
-         ->Where('UserID', $UserID)
-         ->Put();
+      
+      // Update CountDrafts column of user table fot this user
+      Gdn::UserModel()->SetField($UserID, 'CountDrafts', $CountDrafts);
    }
 
 }

@@ -1,33 +1,18 @@
 <?php if (!defined('APPLICATION')) exit();
-/*
-Copyright 2008, 2009 Vanilla Forums Inc.
-This file is part of Garden.
-Garden is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
-Garden is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
-You should have received a copy of the GNU General Public License along with Garden.  If not, see <http://www.gnu.org/licenses/>.
-Contact Vanilla Forums Inc. at support [at] vanillaforums [dot] com
-*/
 
 /**
+ * Data validation
+ * 
  * Manages data integrity validation rules. Can automatically define a set of
  * validation rules based on a @@Schema with $this->GenerateBySchema($Schema);
  *
- *
- * @author Mark O'Sullivan
- * @copyright 2009 Mark O'Sullivan
+ * @author Mark O'Sullivan <markm@vanillaforums.com>
+ * @copyright 2003 Vanilla Forums, Inc
  * @license http://www.opensource.org/licenses/gpl-2.0.php GPL
  * @package Garden
- * @version @@GARDEN-VERSION@@
- * @namespace Garden.Core
+ * @since 2.0
  */
 
-
-/**
- * Manages data integrity validation rules. Can automatically define a set of
- * validation rules based on a @@Schema with $this->GenerateBySchema($Schema);
- *
- * @package Garden
- */
 class Gdn_Validation {
 
 
@@ -122,6 +107,7 @@ class Gdn_Validation {
       $this->AddRule('WebAddress', 'function:ValidateWebAddress');
       $this->AddRule('Username', 'function:ValidateUsername');
       $this->AddRule('UrlString', 'function:ValidateUrlString');
+      $this->AddRule('UrlStringRelaxed', 'function:ValidateUrlStringRelaxed');
       $this->AddRule('Date', 'function:ValidateDate');
       $this->AddRule('Integer', 'function:ValidateInteger');
       $this->AddRule('Boolean', 'function:ValidateBoolean');
@@ -138,6 +124,7 @@ class Gdn_Validation {
       $this->AddRule('PhoneNA', 'function:ValidatePhoneNA');
       $this->AddRule('PhoneInt', 'function:ValidatePhoneInt');
       $this->AddRule('ZipCode', 'function:ValidateZipCode');
+      $this->AddRule('Format', 'function:ValidateFormat');
    }
 
 
@@ -225,6 +212,10 @@ class Gdn_Validation {
                   $RuleNames[] = 'Enum';
                   break;
             }
+            
+            if ($Field == 'Format') {
+               $RuleNames[] = 'Format';
+            }
          }
          // Assign the rules to the field.
          // echo '<div>Field: '.$Field.'</div>';
@@ -251,6 +242,31 @@ class Gdn_Validation {
          $this->_ValidationFields[$FieldName] = '';
          
       $this->_ApplyRule($FieldName, $RuleName, $CustomError);
+   }
+   
+   /**
+    * Apply an array of validation rules all at once.
+    * @param array $Fields 
+    */
+   public function ApplyRules($Fields) {
+      foreach ($Fields as $Index => $Row) {
+         $Validation = GetValue('Validation', $Row);
+         if (!$Validation)
+            continue;
+         
+         $FieldName = GetValue('Name', $Row, $Index);
+         if (is_string($Validation)) {
+            $this->ApplyRule($FieldName, $Validation);
+         } elseif (is_array($Validation)) {
+            foreach ($Validation as $Rule) {
+               if (is_array($Rule)) {
+                  $this->ApplyRule($FieldName, $Rule[0], $Rule[1]);
+               } else {
+                  $this->ApplyRule($FieldName, $Rule);
+               }
+            }
+         }
+      }
    }
       
    protected function _ApplyRule($FieldName, $RuleName, $CustomError = '') {
@@ -521,9 +537,10 @@ class Gdn_Validation {
 
                      // Call the function. Core-defined validation functions can
                      // be found in ./functions.validation.php
-                     $FieldInfo = NULL;
+                     $FieldInfo = array('Name' => $FieldName);
                      if (is_array($this->_Schema) && array_key_exists($FieldName, $this->_Schema))
-                        $FieldInfo = $this->_Schema[$FieldName];
+                        $FieldInfo = array_merge($FieldInfo, (array)$this->_Schema[$FieldName]);
+                     $FieldInfo = (object)$FieldInfo;
 
                      $ValidationResult = $Function($FieldValue, $FieldInfo, $PostedFields);
                      if ($ValidationResult !== TRUE) {
@@ -558,7 +575,7 @@ class Gdn_Validation {
     *
     * @param string $FieldName The name of the form field that has the error.
     * @param string $ErrorCode The translation code of the error.
-    *    Codes thst begin with an '@' symbol are treated as literals and not translated.
+    *    Codes that begin with an '@' symbol are treated as literals and not translated.
     */
    public function AddValidationResult($FieldName, $ErrorCode = '') {
       if (!is_array($this->_ValidationResults))
@@ -586,5 +603,25 @@ class Gdn_Validation {
          $this->_ValidationResults = array();
       
       return $this->_ValidationResults;
+   }
+   
+   public function ResultsText() {
+      return self::ResultsAsText($this->Results());
+   }
+   
+   public static function ResultsAsText($Results) {
+      $Errors = array();
+      foreach ($Results as $Name => $Value) {
+         if (is_array($Value)) {
+            foreach ($Value as $Code) {
+               $Errors[] = trim(sprintf(T($Code), T($Name)), '.');
+            }
+         } else {
+            $Errors[] = trim(sprintf(T($Value), T($Name)), '.');
+         }
+      }
+      
+      $Result = implode('. ', $Errors);
+      return $Result;
    }
 }

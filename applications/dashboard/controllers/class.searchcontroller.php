@@ -7,30 +7,48 @@ Garden is distributed in the hope that it will be useful, but WITHOUT ANY WARRAN
 You should have received a copy of the GNU General Public License along with Garden.  If not, see <http://www.gnu.org/licenses/>.
 Contact Vanilla Forums Inc. at support [at] vanillaforums [dot] com
 */
-
+/**
+ * Search Controller
+ *
+ * @package Dashboard
+ */
+ 
+/**
+ * Manages basic searching.
+ *
+ * @since 2.0.0
+ * @package Dashboard
+ */
 class SearchController extends Gdn_Controller {
+   /** @var array Models to automatically instantiate. */
+   public $Uses = array('Database');
+   
+   // Object initialization
+   public $Form;
+   public $SearchModel;   
 
    /**
-    * @var Gdn_Form
+    * Object instantiation & form prep.
     */
-   public $Form;
-
-   public $SearchModel;
-
-   public $Uses = array('Database');
-
 	public function __construct() {
 		parent::__construct();
-
+   
+      // Object instantiation
       $this->SearchModel = new SearchModel();
-		
 		$Form = Gdn::Factory('Form');
+		
+		// Form prep
 		$Form->Method = 'get';
 		$Form->InputPrefix = '';
-		
 		$this->Form = $Form;
 	}
 	
+	/**
+    * Add JS, CSS, modules. Automatically run on every use.
+    *
+    * @since 2.0.0
+    * @access public
+    */
    public function Initialize() {
       $this->Head = new HeadModule($this);
       $this->AddJsFile('jquery.js');
@@ -38,21 +56,32 @@ class SearchController extends Gdn_Controller {
       $this->AddJsFile('jquery.form.js');
       $this->AddJsFile('jquery.popup.js');
       $this->AddJsFile('jquery.gardenhandleajaxform.js');
+      $this->AddJsFile('jquery.expander.js');
       $this->AddJsFile('global.js');
       
       $this->AddCssFile('style.css');
       $this->AddCssFile('menu.css');
       $this->AddModule('GuestModule');
       parent::Initialize();
+      $this->SetData('Breadcrumbs', array(array('Name' => T('Search'), 'Url' => '/search')));
    }
 	
-	public function Index($Offset = 0, $Limit = NULL) {
+	/**
+    * Default search functionality.
+    *
+    * @since 2.0.0
+    * @access public
+    * @param int $Page Page number.
+    */
+	public function Index($Page = '') {
 		$this->AddJsFile('jquery.gardenmorepager.js');
 		$this->AddJsFile('search.js');
 		$this->Title(T('Search'));
-
-		if(!is_numeric($Limit))
-			$Limit = Gdn::Config('Garden.Search.PerPage', 20);
+      
+      SaveToConfig('Garden.Format.EmbedSize', '160x90', FALSE);
+      
+      list($Offset, $Limit) = OffsetLimit($Page, C('Garden.Search.PerPage', 20));
+      $this->SetData('_Limit', $Limit);
 		
 		$Search = $this->Form->GetFormValue('Search');
       $Mode = $this->Form->GetFormValue('Mode');
@@ -64,8 +93,11 @@ class SearchController extends Gdn_Controller {
          $this->Form->AddError($Ex);
          $ResultSet = array();
       } catch (Exception $Ex) {
+         LogException($Ex);
+         $this->Form->AddError($Ex);
          $ResultSet = array();
       }
+      Gdn::UserModel()->JoinUsers($ResultSet, array('UserID'));
 		$this->SetData('SearchResults', $ResultSet, TRUE);
 		$this->SetData('SearchTerm', Gdn_Format::Text($Search), TRUE);
 		if($ResultSet)

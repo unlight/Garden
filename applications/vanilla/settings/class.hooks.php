@@ -30,46 +30,126 @@ Contact Vanilla Forums Inc. at support [at] vanillaforums [dot] com
  * @package Vanilla
  */
 class VanillaHooks implements Gdn_IPlugin {
+   
    /**
-    * Add some extra fields to the session query.
-    * 
-    * @since 2.0.0
-    * @package Vanilla
-    * @todo Uncomment or delete this method.
-    * 
-    * @param object $Sender UserModel.
+    *
+    * @param DbaController $Sender 
     */
-   public function UserModel_SessionQuery_Handler(&$Sender) {
-      //$Sender->SQL->Select('u.CountDiscussions, u.CountUnreadDiscussions, u.CountDrafts, u.CountBookmarks');
+   public function DbaController_CountJobs_Handler($Sender) {
+      $Counts = array(
+          'Discussion' => array('CountComments', 'FirstCommentID', 'LastCommentID', 'DateLastComment', 'LastCommentUserID'),
+          'Category' => array('CountDiscussions', 'CountComments', 'LastDiscussionID', 'LastCommentID')
+      );
+      
+      foreach ($Counts as $Table => $Columns) {
+         foreach ($Columns as $Column) {
+            $Name = "Recalculate $Table.$Column";
+            $Url = "/dba/counts.json?".http_build_query(array('table' => $Table, 'column' => $Column));
+            
+            $Sender->Data['Jobs'][$Name] = $Url;
+         }
+      }
    }
    
-	/**
-	 * Remove Vanilla data when deleting a user.
-    *
-    * @since 2.0.0
-    * @package Vanilla
-    * 
-    * @param object $Sender UserModel.
+   /**
+    * Delete all of the Vanilla related information for a specific user.
+    * @param int $UserID The ID of the user to delete.
+    * @param array $Options An array of options:
+    *  - DeleteMethod: One of delete, wipe, or NULL
+    * @since 2.1
     */
-   public function UserModel_BeforeDeleteUser_Handler($Sender) {
-      $UserID = GetValue('UserID', $Sender->EventArguments);
-      $Options = GetValue('Options', $Sender->EventArguments, array());
-      $Options = is_array($Options) ? $Options : array();
+   public function DeleteUserData($UserID, $Options = array(), &$Data = NULL) {
+      $SQL = Gdn::SQL();
       
-      // Remove discussion watch records and drafts
-		$Sender->SQL->Delete('UserDiscussion', array('UserID' => $UserID));
-		$Sender->SQL->Delete('Draft', array('InsertUserID' => $UserID));
+      // Remove discussion watch records and drafts.
+		$SQL->Delete('UserDiscussion', array('UserID' => $UserID));
+      
+		Gdn::UserModel()->GetDelete('Draft', array('InsertUserID' => $UserID), $Data);
       
       // Comment deletion depends on method selected
       $DeleteMethod = GetValue('DeleteMethod', $Options, 'delete');
       if ($DeleteMethod == 'delete') {
-         $Sender->SQL->Delete('Comment', array('InsertUserID' => $UserID));
+         // Clear out the last posts to the categories.
+         $SQL
+            ->Update('Category c')
+            ->Join('Discussion d', 'd.DiscussionID = c.LastDiscussionID')
+            ->Where('d.InsertUserID', $UserID)
+            ->Set('c.LastDiscussionID', NULL)
+            ->Set('c.LastCommentID', NULL)
+            ->Put();
+         
+         $SQL
+            ->Update('Category c')
+            ->Join('Comment d', 'd.CommentID = c.LastCommentID')
+            ->Where('d.InsertUserID', $UserID)
+            ->Set('c.LastDiscussionID', NULL)
+            ->Set('c.LastCommentID', NULL)
+            ->Put();
+         
+         // Grab all of the discussions that the user has engaged in.
+         $DiscussionIDs = $SQL
+            ->Select('DiscussionID')
+            ->From('Comment')
+            ->Where('InsertUserID', $UserID)
+            ->GroupBy('DiscussionID')
+            ->Get()->ResultArray();
+         $DiscussionIDs = ConsolidateArrayValuesByKey($DiscussionIDs, 'DiscussionID');
+
+         
+         Gdn::UserModel()->GetDelete('Comment', array('InsertUserID' => $UserID), $Data);
+         
+         // Update the comment counts.
+         $CommentCounts = $SQL
+            ->Select('DiscussionID')
+            ->Select('CommentID', 'count', 'CountComments')
+            ->Select('CommentID', 'max', 'LastCommentID')
+            ->WhereIn('DiscussionID', $DiscussionIDs)
+            ->GroupBy('DiscussionID')
+            ->Get('Comment')->ResultArray();
+         
+         foreach ($CommentCounts as $Row) {
+            $SQL->Put('Discussion',
+               array('CountComments' => $Row['CountComments'] + 1, 'LastCommentID' => $Row['LastCommentID']),
+               array('DiscussionID' => $Row['DiscussionID']));
+         }
+         
+         // Update the last user IDs.
+         $SQL->Update('Discussion d')
+            ->Join('Comment c', 'd.LastCommentID = c.CommentID', 'left')
+            ->Set('d.LastCommentUserID', 'c.InsertUserID', FALSE, FALSE)
+            ->Set('d.DateLastComment', 'c.DateInserted', FALSE, FALSE)
+            ->WhereIn('d.DiscussionID', $DiscussionIDs)
+            ->Put();
+         
+         // Update the last posts.
+         $Discussions = $SQL
+            ->WhereIn('DiscussionID', $DiscussionIDs)
+            ->Where('LastCommentUserID', $UserID)
+            ->Get('Discussion');
+         
+         // Delete the user's dicussions 
+         Gdn::UserModel()->GetDelete('Discussion', array('InsertUserID' => $UserID), $Data);
+         
+         // Update the appropriat recent posts in the categories.
+         $CategoryModel = new CategoryModel();
+         $Categories = $CategoryModel->GetWhere(array('LastDiscussionID' => NULL))->ResultArray();
+         foreach ($Categories as $Category) {
+            $CategoryModel->SetRecentPost($Category['CategoryID']);
+         }
       } else if ($DeleteMethod == 'wipe') {
-			$Sender->SQL->From('Comment')
+         // Erase the user's dicussions
+         $SQL->Update('Discussion')
+            ->Set('Body', T('The user and all related content has been deleted.'))
+            ->Set('Format', 'Deleted')
+            ->Where('InsertUserID', $UserID)
+            ->Put();
+         
+         // Erase the user's comments
+			$SQL->From('Comment')
 				->Join('Discussion d', 'c.DiscussionID = d.DiscussionID')
 				->Delete('Comment c', array('d.InsertUserID' => $UserID));
 
-         $Sender->SQL->Update('Comment')
+         $SQL->Update('Comment')
             ->Set('Body', T('The user and all related content has been deleted.'))
             ->Set('Format', 'Deleted')
             ->Where('InsertUserID', $UserID)
@@ -77,10 +157,9 @@ class VanillaHooks implements Gdn_IPlugin {
       } else {
          // Leave comments
       }
-		$Sender->SQL->Delete('Discussion', array('InsertUserID' => $UserID));
 
       // Remove the user's profile information related to this application
-      $Sender->SQL->Update('User')
+      $SQL->Update('User')
          ->Set(array(
 				'CountDiscussions' => 0,
 				'CountUnreadDiscussions' => 0,
@@ -90,6 +169,23 @@ class VanillaHooks implements Gdn_IPlugin {
 			))
          ->Where('UserID', $UserID)
          ->Put();
+   }
+   
+	/**
+	 * Remove Vanilla data when deleting a user.
+    *
+    * @since 2.0.0
+    * @package Vanilla
+    * 
+    * @param UserModel $Sender UserModel.
+    */
+   public function UserModel_BeforeDeleteUser_Handler($Sender) {
+      $UserID = GetValue('UserID', $Sender->EventArguments);
+      $Options = GetValue('Options', $Sender->EventArguments, array());
+      $Options = is_array($Options) ? $Options : array();
+      $Content =& $Sender->EventArguments['Content'];
+      
+      $this->DeleteUserData($UserID, $Options, $Content);
    }
    
    /**
@@ -111,8 +207,14 @@ class VanillaHooks implements Gdn_IPlugin {
          if ($PermissionModel === NULL)
             $PermissionModel = new PermissionModel();
          
-         $Result = $PermissionModel->GetUserPermissions($UserID, 'Vanilla.Discussions.View', 'Category', 'PermissionCategoryID', 'CategoryID', $CategoryID);
-         return (ArrayValue('Vanilla.Discussions.View', $Result[0], FALSE)) ? TRUE : FALSE;
+         $Category = CategoryModel::Categories($CategoryID);
+         if ($Category)
+            $PermissionCategoryID = $Category['PermissionCategoryID'];
+         else
+            $PermissionCategoryID = -1;
+         
+         $Result = $PermissionModel->GetUserPermissions($UserID, 'Vanilla.Discussions.View', 'Category', 'PermissionCategoryID', 'CategoryID', $PermissionCategoryID);
+         return (GetValue('Vanilla.Discussions.View', GetValue(0, $Result), FALSE)) ? TRUE : FALSE;
       }
       return FALSE;
    }
@@ -128,7 +230,7 @@ class VanillaHooks implements Gdn_IPlugin {
     * 
     * @param object $Sender DashboardController.
     */ 
-   public function Base_Render_Before(&$Sender) {
+   public function Base_Render_Before($Sender) {
       $Session = Gdn::Session();
       if ($Sender->Menu)
          $Sender->Menu->AddLink('Discussions', T('Discussions'), '/discussions', FALSE, array('Standard' => TRUE));
@@ -142,12 +244,18 @@ class VanillaHooks implements Gdn_IPlugin {
     * 
     * @param object $Sender ProfileController.
     */ 
-   public function ProfileController_AddProfileTabs_Handler(&$Sender) {
+   public function ProfileController_AddProfileTabs_Handler($Sender) {
       if (is_object($Sender->User) && $Sender->User->UserID > 0) {
          $UserID = $Sender->User->UserID;
          // Add the discussion tab
-         $Sender->AddProfileTab('Discussions', 'profile/discussions/'.$Sender->User->UserID.'/'.urlencode($Sender->User->Name), 'Discussions', T('Discussions').CountString(GetValueR('User.CountDiscussions', $Sender, NULL), "/profile/count/discussions?userid=$UserID"));
-         $Sender->AddProfileTab('Comments', 'profile/comments/'.$Sender->User->UserID.'/'.urlencode($Sender->User->Name), 'Comments', T('Comments').CountString(GetValueR('User.CountComments', $Sender, NULL), "/profile/count/comments?userid=$UserID"));
+         $DiscussionsLabel = Sprite('SpDiscussions').T('Discussions');
+         $CommentsLabel = Sprite('SpComments').T('Comments');
+         if (C('Vanilla.Profile.ShowCounts', TRUE)) {
+            $DiscussionsLabel .= '<span class="Aside">'.CountString(GetValueR('User.CountDiscussions', $Sender, NULL), "/profile/count/discussions?userid=$UserID").'</span>';
+            $CommentsLabel .= '<span class="Aside">'.CountString(GetValueR('User.CountComments', $Sender, NULL), "/profile/count/comments?userid=$UserID").'</span>';
+         }
+         $Sender->AddProfileTab(T('Discussions'), 'profile/discussions/'.$Sender->User->UserID.'/'.rawurlencode($Sender->User->Name), 'Discussions', $DiscussionsLabel);
+         $Sender->AddProfileTab(T('Comments'), 'profile/comments/'.$Sender->User->UserID.'/'.rawurlencode($Sender->User->Name), 'Comments', $CommentsLabel);
          // Add the discussion tab's CSS and Javascript.
          $Sender->AddJsFile('jquery.gardenmorepager.js');
          $Sender->AddJsFile('discussions.js');
@@ -160,23 +268,65 @@ class VanillaHooks implements Gdn_IPlugin {
     * @since 2.0.0
     * @package Vanilla
     * 
-    * @param object $Sender ProfileController.
+    * @param ProfileController $Sender
     */ 
    public function ProfileController_AfterPreferencesDefined_Handler($Sender) {
       $Sender->Preferences['Notifications']['Email.DiscussionComment'] = T('Notify me when people comment on my discussions.');
-      $Sender->Preferences['Notifications']['Email.DiscussionMention'] = T('Notify me when people mention me in discussion titles.');
-      $Sender->Preferences['Notifications']['Email.CommentMention'] = T('Notify me when people mention me in comments.');
       $Sender->Preferences['Notifications']['Email.BookmarkComment'] = T('Notify me when people comment on my bookmarked discussions.');
+      $Sender->Preferences['Notifications']['Email.Mention'] = T('Notify me when people mention me.');
       
 
       $Sender->Preferences['Notifications']['Popup.DiscussionComment'] = T('Notify me when people comment on my discussions.');
-      $Sender->Preferences['Notifications']['Popup.DiscussionMention'] = T('Notify me when people mention me in discussion titles.');
-      $Sender->Preferences['Notifications']['Popup.CommentMention'] = T('Notify me when people mention me in comments.');
       $Sender->Preferences['Notifications']['Popup.BookmarkComment'] = T('Notify me when people comment on my bookmarked discussions.');
+      $Sender->Preferences['Notifications']['Popup.Mention'] = T('Notify me when people mention me.');
 
-      if (Gdn::Session()->CheckPermission('Garden.AdvancedNotifications.Allow'))
-         $Sender->Preferences['Notifications']['Email.NewDiscussion'] = array(T('Notify me when people start new discussions.'), 'Meta');
-//      $Sender->Preferences['Notifications']['Popup.NewDiscussion'] = T('Notify me when people start new discussions.');
+//      if (Gdn::Session()->CheckPermission('Garden.AdvancedNotifications.Allow')) {
+//         $Sender->Preferences['Notifications']['Email.NewDiscussion'] = array(T('Notify me when people start new discussions.'), 'Meta');
+//         $Sender->Preferences['Notifications']['Email.NewComment'] = array(T('Notify me when people comment on a discussion.'), 'Meta');
+////      $Sender->Preferences['Notifications']['Popup.NewDiscussion'] = T('Notify me when people start new discussions.');
+//      }
+      
+      if (Gdn::Session()->CheckPermission('Garden.AdvancedNotifications.Allow')) {
+         $PostBack = $Sender->Form->IsPostBack();
+         $Set = array();
+
+         // Add the category definitions to for the view to pick up.
+         $DoHeadings = C('Vanilla.Categories.DoHeadings');
+         // Grab all of the categories.
+         $Categories = array();
+         $Prefixes = array('Email.NewDiscussion', 'Popup.NewDiscussion', 'Email.NewComment', 'Popup.NewComment');
+         foreach (CategoryModel::Categories() as $Category) {
+            if (!$Category['PermsDiscussionsView'] || $Category['Depth'] <= 0 || $Category['Depth'] > 2 || $Category['Archived'])
+               continue;
+
+            $Category['Heading'] = ($DoHeadings && $Category['Depth'] <= 1);
+            $Categories[] = $Category;
+
+            if ($PostBack) {
+               foreach ($Prefixes as $Prefix) {
+                  $FieldName = "$Prefix.{$Category['CategoryID']}";
+                  $Value = $Sender->Form->GetFormValue($FieldName, NULL);
+                  if (!$Value)
+                     $Value = NULL;
+                  $Set[$FieldName] = $Value;
+               }
+            }
+         }
+         $Sender->SetData('CategoryNotifications', $Categories);
+         if ($PostBack) {
+            UserModel::SetMeta($Sender->User->UserID, $Set, 'Preferences.');
+         }
+      }
+   }
+   
+   /**
+    *
+    * @param ProfileController $Sender 
+    */
+   public function ProfileController_CustomNotificationPreferneces_Handler($Sender) {
+      if (Gdn::Session()->CheckPermission('Garden.AdvancedNotifications.Allow')) {
+         include $Sender->FetchViewLocation('NotificationPreferences', 'Settings', 'Vanilla');
+      }
    }
 	
 	/**
@@ -200,7 +350,8 @@ class VanillaHooks implements Gdn_IPlugin {
 	 *
 	 * @param object $Sender SettingsController.
 	 */
-   public function SettingsController_DashboardData_Handler(&$Sender) {
+   public function SettingsController_DashboardData_Handler($Sender) {
+      /*
       $DiscussionModel = new DiscussionModel();
       // Number of Discussions
       $CountDiscussions = $DiscussionModel->GetCount();
@@ -220,6 +371,7 @@ class VanillaHooks implements Gdn_IPlugin {
       $Sender->BuzzData[T('New comments in the last day')] = number_format($CommentModel->GetCountWhere(array('DateInserted >=' => Gdn_Format::ToDateTime(strtotime('-1 day')))));
       // Number of New Comments in the last week
       $Sender->BuzzData[T('New comments in the last week')] = number_format($CommentModel->GetCountWhere(array('DateInserted >=' => Gdn_Format::ToDateTime(strtotime('-1 week')))));
+      */
    }
    
    /**
@@ -230,13 +382,15 @@ class VanillaHooks implements Gdn_IPlugin {
 	 *
 	 * @param object $Sender ProfileController.
 	 */
-   public function ProfileController_Comments_Create(&$Sender) {
+   public function ProfileController_Comments_Create($Sender) {
+		$Sender->EditMode(FALSE);
 		$View = $Sender->View;
       $UserReference = ArrayValue(0, $Sender->RequestArgs, '');
 		$Username = ArrayValue(1, $Sender->RequestArgs, '');
       $Offset = ArrayValue(2, $Sender->RequestArgs, 0);
       // Tell the ProfileController what tab to load
 		$Sender->GetUserInfo($UserReference, $Username);
+      $Sender->_SetBreadcrumbs(T('Comments'), '/profile/comments');
       $Sender->SetTabView('Comments', 'profile', 'Discussion', 'Vanilla');
       
       // Load the data for the requested tab.
@@ -245,9 +399,9 @@ class VanillaHooks implements Gdn_IPlugin {
       
       $Limit = Gdn::Config('Vanilla.Discussions.PerPage', 30);
       $CommentModel = new CommentModel();
-      $Sender->CommentData = $CommentModel->GetByUser($Sender->User->UserID, $Limit, $Offset);
-      $CountComments = $Offset + $Sender->CommentData->NumRows();
-      if ($Sender->CommentData->NumRows() == $Limit)
+      $Comments = $Sender->SetData('Comments', $CommentModel->GetByUser($Sender->User->UserID, $Limit, $Offset));
+      $CountComments = $Offset + $Comments->NumRows();
+      if ($Comments->NumRows() == $Limit)
          $CountComments = $Offset + $Limit + 1;
       
       // Build a pager
@@ -289,13 +443,17 @@ class VanillaHooks implements Gdn_IPlugin {
 	 *
 	 * @param object $Sender ProfileController.
 	 */
-   public function ProfileController_Discussions_Create(&$Sender) {
+   public function ProfileController_Discussions_Create($Sender) {
+		$Sender->EditMode(FALSE);
+		
       $UserReference = ArrayValue(0, $Sender->RequestArgs, '');
 		$Username = ArrayValue(1, $Sender->RequestArgs, '');
       $Offset = ArrayValue(2, $Sender->RequestArgs, 0);
       // Tell the ProfileController what tab to load
 		$Sender->GetUserInfo($UserReference, $Username);
+      $Sender->_SetBreadcrumbs(T('Discussions'), '/profile/discussions');
       $Sender->SetTabView('Discussions', 'Profile', 'Discussions', 'Vanilla');
+		$Sender->CountCommentsPerPage = C('Vanilla.Comments.PerPage', 30);
       
       // Load the data for the requested tab.
       if (!is_numeric($Offset) || $Offset < 0)
@@ -346,11 +504,58 @@ class VanillaHooks implements Gdn_IPlugin {
 	 *
 	 * @param object $Sender SettingsController.
 	 */
-   public function SettingsController_DefineAdminPermissions_Handler(&$Sender) {
+   public function SettingsController_DefineAdminPermissions_Handler($Sender) {
       if (isset($Sender->RequiredAdminPermissions)) {
          $Sender->RequiredAdminPermissions[] = 'Vanilla.Settings.Manage';
          $Sender->RequiredAdminPermissions[] = 'Vanilla.Categories.Manage';
-         $Sender->RequiredAdminPermissions[] = 'Vanilla.Spam.Manage';
+      }
+   }
+   
+   public function Gdn_Statistics_Tick_Handler($Sender, $Args) {
+      $Path = Gdn::Request()->Post('Path');
+      $Args = Gdn::Request()->Post('Args');
+      parse_str($Args, $Args);
+      $ResolvedPath = trim(Gdn::Request()->Post('ResolvedPath'), '/');
+      $ResolvedArgs = @json_decode(Gdn::Request()->Post('ResolvedArgs'));
+      $DiscussionID = NULL;
+      $DiscussionModel = new DiscussionModel();
+      
+//      Gdn::Controller()->SetData('Path', $Path);
+//      Gdn::Controller()->SetData('Args', $Args);
+//      Gdn::Controller()->SetData('ResolvedPath', $ResolvedPath);
+//      Gdn::Controller()->SetData('ResolvedArgs', $ResolvedArgs);
+      
+      // Comment permalink
+      if ($ResolvedPath == 'vanilla/discussion/comment') {
+         $CommentID = GetValue('CommentID', $ResolvedArgs);
+         $CommentModel = new CommentModel();
+         $Comment = $CommentModel->GetID($CommentID);
+         $DiscussionID = GetValue('DiscussionID', $Comment);
+      } 
+      
+      // Discussion link
+      elseif ($ResolvedPath == 'vanilla/discussion/index') {
+         $DiscussionID = GetValue('DiscussionID', $ResolvedArgs, NULL);
+      }
+      
+      // Embedded discussion
+      elseif ($ResolvedPath == 'vanilla/discussion/embed') {
+         $ForeignID = GetValue('vanilla_identifier', $Args);
+         if ($ForeignID) {
+            // This will be hit a lot so let's try caching it...
+            $Key = "DiscussionID.ForeignID.page.$ForeignID";
+            $DiscussionID = Gdn::Cache()->Get($Key);
+            if (!$DiscussionID) {
+               $Discussion = $DiscussionModel->GetForeignID($ForeignID, 'page');
+               $DiscussionID = GetValue('DiscussionID', $Discussion);
+               Gdn::Cache()->Store($Key, $DiscussionID, array(Gdn_Cache::FEATURE_EXPIRY, 1800));
+            }
+         }
+      }
+      
+      if ($DiscussionID) {
+         $DiscussionModel->AddView($DiscussionID);
+         Gdn::Controller()->SetData('Discussion.CountViews', array('DiscussionID' => $DiscussionID, 'Inc' => 1));
       }
    }
    
@@ -362,11 +567,13 @@ class VanillaHooks implements Gdn_IPlugin {
 	 *
 	 * @param object $Sender DashboardController.
 	 */
-   public function Base_GetAppSettingsMenuItems_Handler(&$Sender) {
+   public function Base_GetAppSettingsMenuItems_Handler($Sender) {
       $Menu = &$Sender->EventArguments['SideMenu'];
+      $Menu->AddLink('Moderation', T('Flood Control'), 'vanilla/settings/floodcontrol', 'Garden.Settings.Manage');
       $Menu->AddLink('Forum', T('Categories'), 'vanilla/settings/managecategories', 'Vanilla.Categories.Manage');
-      $Menu->AddLink('Forum', T('Flood Control'), 'vanilla/settings/floodcontrol', 'Vanilla.Spam.Manage');
       $Menu->AddLink('Forum', T('Advanced'), 'vanilla/settings/advanced', 'Vanilla.Settings.Manage');
+      $Menu->AddLink('Forum', T('Blog Comments'), 'dashboard/embed/comments', 'Garden.Settings.Manage');
+      $Menu->AddLink('Forum', T('Embed Forum'), 'dashboard/embed/forum', 'Garden.Settings.Manage');
    }
    
    /**

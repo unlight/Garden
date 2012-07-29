@@ -7,8 +7,30 @@ Garden is distributed in the hope that it will be useful, but WITHOUT ANY WARRAN
 You should have received a copy of the GNU General Public License along with Garden.  If not, see <http://www.gnu.org/licenses/>.
 Contact Vanilla Forums Inc. at support [at] vanillaforums [dot] com
 */
-
+/**
+ * Import Controller
+ * @package Dashboard
+ */
+ 
+/**
+ * Manages imports and exports of data.
+ * This controller could use a code audit. Don't use it as sample code.
+ *
+ * @since 2.0.0
+ * @package Dashboard
+ */
 class ImportController extends DashboardController {
+   public function Initialize() {
+      parent::Initialize();
+      Gdn_Theme::Section('Dashboard');
+   }
+   
+   /**
+    * Export core Vanilla and Conversations tables.
+    *
+    * @since 2.0.0
+    * @access public
+    */
    public function Export() {
       $this->Permission('Garden.Export'); // This permission doesn't exist, so only users with Admin == '1' will succeed.
 
@@ -35,7 +57,13 @@ class ImportController extends DashboardController {
 
       $Ex->EndExport();
    }
-
+   
+   /**
+    * Manage importing process.
+    *
+    * @since 2.0.0
+    * @access public
+    */
    public function Go() {
       $this->Permission('Garden.Settings.Manage');
 
@@ -92,7 +120,13 @@ class ImportController extends DashboardController {
       $this->AddJsFile('import.js');
       $this->Render();
    }
-
+   
+   /**
+    * Main import page.
+    *
+    * @since 2.0.0
+    * @access public
+    */
    public function Index() {
       $this->Permission('Garden.Import'); // This permission doesn't exist, so only users with Admin == '1' will succeed.
       $Timer = new Gdn_Timer();
@@ -104,7 +138,9 @@ class ImportController extends DashboardController {
 
       // Search for the list of acceptable imports.
       $ImportPaths = array();
-      $ExistingPaths = SafeGlob(PATH_ROOT.'/uploads/export*', array('gz', 'txt'));
+      $ExistingPaths = SafeGlob(PATH_UPLOADS.'/export*', array('gz', 'txt'));
+      $ExistingPaths2 = SafeGlob(PATH_UPLOADS.'/porter/export*', array('gz'));
+      $ExistingPaths = array_merge($ExistingPaths, $ExistingPaths2);
       foreach ($ExistingPaths as $Path)
          $ImportPaths[$Path] = basename($Path);
       // Add the database as a path.
@@ -112,7 +148,7 @@ class ImportController extends DashboardController {
 
       if($Imp->CurrentStep < 1) {
          // Check to see if there is a file.
-         $ImportPath = Gdn::Config('Garden.Import.ImportPath');
+         $ImportPath = C('Garden.Import.ImportPath');
          $Validation = new Gdn_Validation();
 
 
@@ -161,7 +197,7 @@ class ImportController extends DashboardController {
                }
             }
 
-            if($Validation->Validate($this->Form->FormValues())) {
+            if ($Validation->Validate($this->Form->FormValues())) {
                $this->Form->SetFormValue('Overwrite', 'overwrite');
                $Imp->FromPost($this->Form->FormValues());
                $this->View = 'Info';
@@ -177,7 +213,7 @@ class ImportController extends DashboardController {
          $this->View = 'Info';
       }
 
-      if(!StringBeginsWith($Imp->ImportPath, 'db:') && !file_exists($Imp->ImportPath))
+      if (!StringBeginsWith($Imp->ImportPath, 'db:') && !file_exists($Imp->ImportPath))
          $Imp->DeleteState();
 
       try {
@@ -198,7 +234,13 @@ class ImportController extends DashboardController {
       }
       $this->Render();
    }
-
+   
+   /**
+    * Restart the import process. Undo any work we've done so far and erase state.
+    *
+    * @since 2.0.0
+    * @access public
+    */
    public function Restart() {
       $this->Permission('Garden.Import'); // This permission doesn't exist, so only users with Admin == '1' will succeed.
 

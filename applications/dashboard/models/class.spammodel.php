@@ -30,20 +30,35 @@ class SpamModel extends Gdn_Pluggable {
     */
    public static function IsSpam($RecordType, $Data, $Options = array()) {
       // Set some information about the user in the data.
-      TouchValue('IPAddress', $Data, Gdn::Request()->IpAddress());
-      
-      if ($RecordType == 'User') {
+      if ($RecordType == 'Registration') {
          TouchValue('Username', $Data, $Data['Name']);
       } else {
-         TouchValue('Username', $Data, Gdn::Session()->User->Name);
-         TouchValue('Email', $Data, Gdn::Session()->User->Email);
+         TouchValue('InsertUserID', $Data, Gdn::Session()->UserID);
+         
+         $User = Gdn::UserModel()->GetID(GetValue('InsertUserID', $Data), DATASET_TYPE_ARRAY);
+         
+         if ($User) {
+            if (GetValue('Verified', $User)) {
+               // The user has been verified and isn't a spammer.
+               return FALSE;
+            }
+            TouchValue('Username', $Data, $User['Name']);
+            TouchValue('Email', $Data, $User['Email']);
+            TouchValue('IPAddress', $Data, $User['LastIPAddress']);
+         }
       }
+      
+      if (!isset($Data['Body']) && isset($Data['Story'])) {
+         $Data['Body'] = $Data['Story'];
+      }
+      
+      TouchValue('IPAddress', $Data, Gdn::Request()->IpAddress());
 
       $Sp = self::_Instance();
       
       $Sp->EventArguments['RecordType'] = $RecordType;
-      $Sp->EventArguments['Data'] = $Data;
-      $Sp->EventArguments['Options'] = $Options;
+      $Sp->EventArguments['Data'] =& $Data;
+      $Sp->EventArguments['Options'] =& $Options;
       $Sp->EventArguments['IsSpam'] = FALSE;
 
       $Sp->FireEvent('CheckSpam');
@@ -51,7 +66,20 @@ class SpamModel extends Gdn_Pluggable {
 
       // Log the spam entry.
       if ($Spam && GetValue('Log', $Options, TRUE)) {
-         LogModel::Insert('Spam', $RecordType, $Data);
+         $LogOptions = array();
+         switch ($RecordType) {
+            case 'Registration':
+               $LogOptions['GroupBy'] = array('RecordIPAddress');
+               break;
+            case 'Comment':
+            case 'Discussion':
+            case 'Activity':
+            case 'ActivityComment':
+               $LogOptions['GroupBy'] = array('RecordID');
+               break;
+         }
+
+         LogModel::Insert('Spam', $RecordType, $Data, $LogOptions);
       }
 
       return $Spam;

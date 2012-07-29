@@ -3,7 +3,7 @@ $Session = Gdn::Session();
 $Alt = FALSE;
 $SubjectsVisible = C('Conversations.Subjects.Visible');
 
-foreach ($this->ConversationData->Result() as $Conversation) {
+foreach ($this->Data('Conversations')->Result() as $Conversation) {
    $Alt = $Alt == TRUE ? FALSE : TRUE;
    $LastAuthor = UserBuilder($Conversation, 'LastMessage');
    $LastPhoto = UserPhoto($LastAuthor, 'Photo');
@@ -13,9 +13,9 @@ foreach ($this->ConversationData->Result() as $Conversation) {
    $CssClass .= $LastPhoto != '' ? ' HasPhoto' : '';
    $JumpToItem = $Conversation->CountMessages - $Conversation->CountNewMessages;
    if ($Conversation->Format == 'Text')
-      $Message = nl2br(SliceString(Gdn_Format::To($Conversation->LastMessage, $Conversation->Format), 100));
+      $Message = (SliceString(Gdn_Format::To($Conversation->LastMessage, $Conversation->Format), 100));
    else
-      $Message = nl2br(SliceString(Gdn_Format::Text(Gdn_Format::To($Conversation->LastMessage, $Conversation->Format), FALSE), 100));
+      $Message = (SliceString(Gdn_Format::Text(Gdn_Format::To($Conversation->LastMessage, $Conversation->Format), FALSE), 100));
 
    if (StringIsNullOrEmpty(trim($Message)))
       $Message = T('Blank Message');
@@ -28,22 +28,23 @@ foreach ($this->ConversationData->Result() as $Conversation) {
    $Names = '';
    $PhotoUser = NULL;
    foreach ($Conversation->Participants as $User) {
-      if (GetValue('UserID', $User) == Gdn::Session()->UserID)
-         continue;
-      $Names = ConcatSep(', ', $Names, GetValue('Name', $User));
+      $Names = ConcatSep(', ', $Names, FormatUsername($User, 'You'));
       if (!$PhotoUser && GetValue('Photo', $User))
          $PhotoUser = $User;
    }
    ?>
-   <?php if ($PhotoUser) { ?>
-   <div class="Photo"><?php echo UserPhoto($PhotoUser); ?></div>
-   <?php } ?>
    <div class="ItemContent Conversation">
       <?php
       $Url = '/messages/'.$Conversation->ConversationID.'/#Item_'.$JumpToItem;
 
       if ($Names) {
-         echo '<h3 class="Users">', Anchor(htmlspecialchars($Names), $Url), '</h3>';
+         echo '<h3 class="Users">';
+         
+         if ($PhotoUser) {
+            echo '<div class="Author Photo">'.UserPhoto($PhotoUser).'</div>';
+         }
+
+         echo Anchor(htmlspecialchars($Names), $Url), '</h3>';
       }
       if ($SubjectsVisible && $Subject = GetValue('Subject', $Conversation)) {
          echo '<div class="Subject"><b>'.Anchor(htmlspecialchars($Subject), $Url).'</b></div>';
@@ -54,13 +55,13 @@ foreach ($this->ConversationData->Result() as $Conversation) {
          <?php 
          $this->FireEvent('BeforeConversationMeta');
 
-         echo '<span class="MetaItem">'.sprintf(Plural($Conversation->CountMessages, '%s message', '%s messages'), $Conversation->CountMessages).'</span>';
+         echo ' <span class="MItem">'.sprintf(Plural($Conversation->CountMessages, '%s message', '%s messages'), $Conversation->CountMessages).'</span> ';
 
          if ($Conversation->CountNewMessages > 0) {
-            echo '<strong class="MetaItem">'.Plural($Conversation->CountNewMessages, '%s new', '%s new').'</strong>';
+            echo ' <strong class="HasNew"> '.Plural($Conversation->CountNewMessages, '%s new', '%s new').'</strong> ';
          }
          
-         echo '<span class="MetaItem">'.Gdn_Format::Date($Conversation->DateLastMessage).'</span>';
+         echo ' <span class="MItem">'.Gdn_Format::Date($Conversation->DateLastMessage).'</span> ';
          ?>
       </div>
    </div>

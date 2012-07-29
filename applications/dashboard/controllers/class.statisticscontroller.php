@@ -7,20 +7,46 @@ Garden is distributed in the hope that it will be useful, but WITHOUT ANY WARRAN
 You should have received a copy of the GNU General Public License along with Garden.  If not, see <http://www.gnu.org/licenses/>.
 Contact Vanilla Forums Inc. at support [at] vanillaforums [dot] com
 */
-
 /**
- * Route Management
+ * Statistics Controller
+ *
+ * @package Dashboard
+ */
+ 
+/**
+ * Managing site statistic reporting.
+ *
+ * @since 2.0.17
+ * @package Dashboard
  */
 class StatisticsController extends DashboardController {
-   
+   /** @var array Models to automatically instantiate. */
    public $Uses = array('Form');
    
+   public function Info() {
+      $this->SetData('FirstDate', Gdn::Statistics()->FirstDate());
+      $this->Render();
+   }
+   
+   /**
+    * Highlight menu path. Automatically run on every use.
+    *
+    * @since 2.0.17
+    * @access public
+    */
    public function Initialize() {
       parent::Initialize();
+      Gdn_Theme::Section('Dashboard');
       if ($this->Menu)
          $this->Menu->HighlightRoute('/dashboard/settings');
    }
    
+   /**
+    * Statistics setup & configuration.
+    *
+    * @since 2.0.17
+    * @access public
+    */
    public function Index() {
       $this->Permission('Garden.Settings.Manage');
       $this->AddSideMenu('dashboard/statistics');
@@ -29,17 +55,13 @@ class StatisticsController extends DashboardController {
       $this->EnableSlicing($this);
       
       if ($this->Form->IsPostBack()) {
-         
          $Flow = TRUE;
          
-         if ($Flow && $this->Form->GetFormValue('ClearCredentials')) {
-            Gdn::InstallationID(FALSE);
-            Gdn::InstallationSecret(FALSE);
-            Gdn::Statistics()->Tick();
-            $Flow = FALSE;
+         if ($Flow && $this->Form->GetFormValue('Reregister')) {
+            Gdn::Statistics()->Register();
          }
          
-         if ($Flow && $this->Form->GetFormValue('SaveIdentity')) {
+         if ($Flow && $this->Form->GetFormValue('Save')) {
             Gdn::InstallationID($this->Form->GetFormValue('InstallationID'));
             Gdn::InstallationSecret($this->Form->GetFormValue('InstallationSecret'));
             $this->InformMessage(T("Your settings have been saved."));
@@ -53,11 +75,17 @@ class StatisticsController extends DashboardController {
             SaveToConfig('Garden.Analytics.Enabled', TRUE);
          }
          
+         if ($Flow && $this->Form->GetFormValue('ClearCredentials')) {
+            Gdn::InstallationID(FALSE);
+            Gdn::InstallationSecret(FALSE);
+            Gdn::Statistics()->Tick();
+            $Flow = FALSE;
+         }
       }
       
       $AnalyticsEnabled = Gdn_Statistics::CheckIsEnabled();
       if ($AnalyticsEnabled) {
-         $ConfFile = PATH_LOCAL_CONF.DS.'config.php';
+         $ConfFile = PATH_CONF.'/config.php';
          $this->SetData('ConfWritable', $ConfWritable = is_writable($ConfFile));
          if (!$ConfWritable)
             $AnalyticsEnabled = FALSE;
@@ -76,6 +104,12 @@ class StatisticsController extends DashboardController {
       $this->Render();
    }
    
+   /**
+    * Verify connection credentials.
+    *
+    * @since 2.0.17
+    * @access public
+    */
    public function Verify() {
       $CredentialsValid = Gdn::Statistics()->ValidateCredentials();
       $this->SetData('StatisticsVerified', $CredentialsValid);

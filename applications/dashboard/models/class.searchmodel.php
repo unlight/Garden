@@ -40,11 +40,18 @@ class SearchModel extends Gdn_Model {
          $Sql->BeginWhereGroup();
 
          $ColumnsArray = explode(',', $Columns);
+         
+         $First = TRUE;
          foreach ($ColumnsArray as $Column) {
             $Column = trim($Column);
 
             $Param = $this->Parameter();
-            $Sql->OrWhere("$Column like $Param", NULL, FALSE, FALSE);
+            if ($First) {
+               $Sql->Where("$Column like $Param", NULL, FALSE, FALSE);
+               $First = FALSE;
+            } else {
+               $Sql->OrWhere("$Column like $Param", NULL, FALSE, FALSE);
+            }
          }
 
          $Sql->EndWhereGroup();
@@ -72,7 +79,7 @@ class SearchModel extends Gdn_Model {
 	public function Search($Search, $Offset = 0, $Limit = 20) {
 		// If there are no searches then return an empty array.
 		if(trim($Search) == '')
-			return NULL;
+			return array();
 
       // Figure out the exact search mode.
       if ($this->ForceSearchMode)
@@ -84,16 +91,22 @@ class SearchModel extends Gdn_Model {
          if (strpos($Search, '+') !== FALSE || strpos($Search, '-') !== FALSE)
             $SearchMode = 'boolean';
          else
-            $SearcMode = 'match';
+            $SearchMode = 'match';
       } else {
          $this->_SearchMode = $SearchMode;
       }
+      
+      if ($ForceDatabaseEngine = C('Database.ForceStorageEngine')) {
+         if (strcasecmp($ForceDatabaseEngine, 'myisam') != 0)
+            $SearchMode = 'like';
+      }
+      
       $this->_SearchMode = $SearchMode;
 
       $this->FireEvent('Search');
       
       if(count($this->_SearchSql) == 0)
-			return NULL;
+			return array();
 
 		// Perform the search by unioning all of the sql together.
 		$Sql = $this->SQL
@@ -115,15 +128,25 @@ class SearchModel extends Gdn_Model {
 			$this->_Parameters[$Key] = $Search;
 		}
 		
-		$Result = $this->Database->Query($Sql, $this->_Parameters)->ResultArray();
+      $Parameters= $this->_Parameters;
+      $this->Reset();
+      $this->SQL->Reset();
+		$Result = $this->Database->Query($Sql, $Parameters)->ResultArray();
+      
 		foreach ($Result as $Key => $Value) {
 			if (isset($Value['Summary'])) {
-				$Value['Summary'] = Gdn_Format::Text($Value['Summary']);
+				$Value['Summary'] = Condense(Gdn_Format::To($Value['Summary'], $Value['Format']));
 				$Result[$Key] = $Value;
 			}
+         
+         switch ($Value['RecordType']) {
+            case 'Discussion':
+               $Discussion = ArrayTranslate($Value, array('PrimaryID' => 'DiscussionID', 'Title' => 'Name', 'CategoryID'));
+               $Result[$Key]['Url'] = DiscussionUrl($Discussion, 1);
+               break;
+         }
 		}
-		$this->Reset();
-		$this->SQL->Reset();
+      
 		return $Result;
 	}
 }

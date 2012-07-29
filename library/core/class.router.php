@@ -1,4 +1,17 @@
-<?php
+<?php if (!defined('APPLICATION')) exit();
+
+/**
+ * Routing system
+ * 
+ * Allows paths within the application to redirect, either internally or via
+ * http, to other locations.
+ *
+ * @author Tim Gunter <tim@vanillaforums.com>
+ * @copyright 2003 Vanilla Forums, Inc
+ * @license http://www.opensource.org/licenses/gpl-2.0.php GPL
+ * @package Garden
+ * @since 2.0
+ */
 
 class Gdn_Router extends Gdn_Pluggable {
 
@@ -15,7 +28,7 @@ class Gdn_Router extends Gdn_Pluggable {
          'NotAuthorized' => 'Not Authorized (401)',
          'NotFound'     => 'Not Found (404)'
       );
-      $this->ReservedRoutes = array('DefaultController', 'Default404', 'DefaultPermission', 'UpdateMode');
+      $this->ReservedRoutes = array('DefaultController', 'DefaultForumRoot', 'Default404', 'DefaultPermission', 'UpdateMode');
       $this->_LoadRoutes();
    }
    
@@ -105,6 +118,41 @@ class Gdn_Router extends Gdn_Pluggable {
       }
       
       return FALSE; // No route matched
+   }
+
+   public function ReverseRoute($Url) {
+      $Root = rtrim(Gdn::Request()->Domain().'/'.Gdn::Request()->WebRoot(), '/');
+
+      if (StringBeginsWith($Url, $Root)) {
+         $Url = StringBeginsWith($Url, $Root, TRUE, TRUE);
+         $WithDomain = TRUE;
+      } else {
+         $WithDomain = FALSE;
+      }
+
+      $Url = '/'.ltrim($Url, '/');
+
+      foreach ($this->Routes as $Route => $RouteData) {
+         if ($RouteData['Type'] != 'Internal' || ($RouteData['Reserved'] && $RouteData['Route'] != 'DefaultController'))
+            continue;
+
+         $Destination = '/'.ltrim($RouteData['Destination'], '/');
+         if ($Destination == $Url) {
+            $Route = '/'.ltrim($RouteData['Route'], '/');
+            
+            if ($Route == '/DefaultController')
+               $Route = '/';
+
+            if ($WithDomain)
+               return $Root.$Route;
+            else
+               return $Route;
+         }
+      }
+      if ($WithDomain)
+         return $Root.$Url;
+      else
+         return $Url;
    }
    
    public function GetRouteTypes() {

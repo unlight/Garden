@@ -10,7 +10,7 @@
       <li>
          <?php
             echo $this->Form->Label('Email/Username', 'Email');
-            echo $this->Form->TextBox('Email');
+            echo $this->Form->TextBox('Email', array('autocorrect' => 'off', 'autocapitalize' => 'off', 'Wrap' => TRUE));
          ?>
       </li>
       <li>
@@ -22,16 +22,16 @@
       </li>
       <li class="Buttons">
          <?php
-            echo $this->Form->Button('Sign In');
+            echo $this->Form->Button('Sign In', array('class' => 'Button Primary'));
             echo $this->Form->CheckBox('RememberMe', T('Keep me signed in'), array('value' => '1', 'id' => 'SignInRememberMe'));
          ?>
       </li>
       <?php if (strcasecmp(C('Garden.Registration.Method'), 'Connect') != 0): ?>
       <li class="CreateAccount">
          <?php
-            $Target = GetIncomingValue('Target', '');
+            $Target = $this->Target();
             if ($Target != '')
-               $Target = '?Target='.$Target;
+               $Target = '?Target='.urlencode($Target);
 
             printf(T("Don't have an account? %s"), Anchor(T('Create One.'), '/entry/register'.$Target));
          ?>
@@ -51,8 +51,8 @@
       </li>
       <li class="Buttons">
          <?php
-            echo $this->Form->Button('Request a new password');
-            echo Wrap(Anchor(T('I remember now!'), '/entry/signin', 'ForgotPassword'), 'div');
+            echo $this->Form->Button('Request a new password', array('class' => 'Button Primary'));
+            echo Anchor(T('I remember now!'), '/entry/signin', 'ForgotPassword');
          ?>
       </li>
    </ul>

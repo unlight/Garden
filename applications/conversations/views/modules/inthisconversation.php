@@ -5,16 +5,14 @@
    <?php
    $Result = $this->Data->Result();
    foreach ($this->Data->Result() as $User) {
-      if($User->Deleted)
-         echo '<li class="Deleted">';
-      else
-         echo '<li>';
+      echo '<li>';
 
-      echo Wrap(UserAnchor($User, 'UserLink'), 'strong',
-         $User->Deleted ?
-         array('title' => sprintf(T('%s deleted this conversation.'), $User->Name))
-         : '');
-      echo Gdn_Format::Date($User->DateLastActive);
+      if (GetValue('Deleted', $User))
+         echo Wrap(UserPhoto($User, array('ImageClass' => 'ProfilePhotoSmall')).' '.UserAnchor($User, 'UserLink'), 'del',
+            array('title' => sprintf(T('%s has left this conversation.'), htmlspecialchars(GetValue('Name', $User))))
+            );
+      else
+         echo UserPhoto($User, array('ImageClass' => 'ProfilePhotoSmall')).' '.UserAnchor($User, 'UserLink');
 
       echo '</li>';
    }

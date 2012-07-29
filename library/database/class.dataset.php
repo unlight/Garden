@@ -1,30 +1,20 @@
 <?php if (!defined('APPLICATION')) exit();
-/*
-Copyright 2008, 2009 Vanilla Forums Inc.
-This file is part of Garden.
-Garden is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
-Garden is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
-You should have received a copy of the GNU General Public License along with Garden.  If not, see <http://www.gnu.org/licenses/>.
-Contact Vanilla Forums Inc. at support [at] vanillaforums [dot] com
-*/
 
 /**
  * A database-independent dataset management/manipulation class.
  *
  * This class is HEAVILY inspired by CodeIgniter (http://www.codeigniter.com).
  * My hat is off to them.
- *
- * @author Mark O'Sullivan
- * @copyright 2003 Mark O'Sullivan
+ * 
+ * @author Todd Burry <todd@vanillaforums.com> 
+ * @copyright 2003 Vanilla Forums, Inc
  * @license http://www.opensource.org/licenses/gpl-2.0.php GPL
  * @package Garden
- * @version @@GARDEN-VERSION@@
- * @namespace Garden.Database
+ * @since 2.0
  */
 
 define('JOIN_INNER', 'inner');
 define('JOIN_LEFT', 'left');
-
 
 class Gdn_DataSet implements IteratorAggregate {
 
@@ -71,12 +61,19 @@ class Gdn_DataSet implements IteratorAggregate {
    /**
     * @todo Undocumented method.
     */
-   public function __construct($Result = NULL) {
+   public function __construct($Result = NULL, $DataSetType = NULL) {
       // Set defaults
       $this->Connection = NULL;
       $this->_Cursor = -1;
       $this->_PDOStatement = NULL;
       $this->_Result = $Result;
+      if ($DataSetType !== NULL) {
+         $this->_DatasetType = $DataSetType;
+      } elseif ($Result) {
+         if (isset($Result[0]) && is_array($Result[0])) {
+            $this->_DatasetType = DATASET_TYPE_ARRAY;
+         }
+      }
    }
 
    public function  __destruct() {
@@ -250,7 +247,7 @@ class Gdn_DataSet implements IteratorAggregate {
     *  - <b>prefix</b>: The name of the prefix to give the columns. Can't be used with <b>column</b>.
     * @param array $Options An array of extra options.
     *  - <b>sql</b>: A Gdn_SQLDriver with the child query.
-    *  - <b>type</b>: The join type, either JOIN_INNER, JOIN_LEFT. This defaults to JOIN_INNER.
+    *  - <b>type</b>: The join type, either JOIN_INNER, JOIN_LEFT. This defaults to JOIN_LEFT.
     */
    public static function Join(&$Data, $Columns, $Options = array()) {
       $Options = array_change_key_case($Options);
@@ -321,7 +318,7 @@ class Gdn_DataSet implements IteratorAggregate {
          if (isset($ChildColumn))
             $ParentColumn = $ChildColumn;
          elseif (isset($Table))
-            $ChildColumn = $Table.'ID';
+            $ParentColumn = $Table.'ID';
          else
             throw Exception("Gdn_DataSet::Join(): Missing 'parent' argument'.");
       }
@@ -348,11 +345,18 @@ class Gdn_DataSet implements IteratorAggregate {
       $Sql->Select("$TableAlias.$ChildColumn");
       
       // Get the IDs to generate an in clause with.
-      $IDs = ConsolidateArrayValuesByKey($Data, $ParentColumn);
+      $IDs = array();
+      foreach ($Data as $Row) {
+         $Value = GetValue($ParentColumn, $Row);
+         if ($Value)
+            $IDs[$Value] = TRUE;
+      }
+      
+      $IDs = array_keys($IDs);
       $Sql->WhereIn($ChildColumn, $IDs);
       
       $ChildData = $Sql->Get()->ResultArray();
-      $ChildData = self::Index($ChildData, $ChildColumn, array('unique' => isset($ColumnPrefix)));
+      $ChildData = self::Index($ChildData, $ChildColumn, array('unique' => GetValue('unique', $Options, isset($ColumnPrefix))));
       
       $NotFound = array();
 
@@ -529,6 +533,38 @@ class Gdn_DataSet implements IteratorAggregate {
          return $this->_PDOStatement;
       else
          $this->_PDOStatement = $PDOStatement;
+   }
+   
+   /**
+    * Unserialize the fields in the dataset.
+    * @param array $Fields 
+    * @since 2.1
+    */
+   public function Unserialize($Fields = array('Attributes', 'Data')) {
+      $Result =& $this->Result();
+      $First = TRUE;
+      
+      foreach ($Result as $Row) {
+         if ($First) {
+            // Check which fields are in the dataset.
+            foreach ($Fields as $Index => $Field) {
+               if (GetValue($Field, $Row, FALSE) === FALSE) {
+                  unset($Fields[$Index]);
+               }
+            }
+            $First = FALSE;
+         }
+         
+         foreach ($Fields as $Field) {
+            if (is_object($Row)) {
+               if (is_string($Row->$Field))
+                  $Row->$Field = @unserialize($Row->$Field);
+            } else {
+               if (is_string($Row[$Field]))
+                  $Row[$Field] = @unserialize($Row[$Field]);
+            }
+         }
+      }
    }
 
    /**

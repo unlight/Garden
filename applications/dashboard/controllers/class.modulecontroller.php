@@ -2,10 +2,22 @@
 /**
  * @copyright Copyright 2008, 2009 Vanilla Forums Inc.
  * @license http://www.opensource.org/licenses/gpl-2.0.php GPLv2
+ * @package Dashboard
  */
 
+/**
+ * Provides a way to widgetize modules.
+ *
+ * @package Dashboard
+ */
 class ModuleController extends Gdn_Controller {
-   public function Index($Module, $AppFolder = '') {
+   /**
+    * Creates and renders an instance of a module.
+    */
+   public function Index($Module, $AppFolder = '', $DeliveryType = '') {
+      if (!$DeliveryType)
+         $this->DeliveryType(DELIVERY_TYPE_VIEW);
+      
       $ModuleClassExists = class_exists($Module);
 
       if ($ModuleClassExists) {
@@ -26,6 +38,15 @@ class ModuleController extends Gdn_Controller {
 
 
             $ModuleInstance = new $Module($this);
+            $ModuleInstance->Visible = TRUE;
+            
+            $WhiteList = array('Limit', 'Help');
+            foreach ($this->Request->Get() as $Key => $Value) {
+               if (in_array($Key, $WhiteList)) {
+                  $ModuleInstance->$Key = $Value;
+               }
+            }
+            
             $this->SetData('_Module', $ModuleInstance);
             $this->Render('Index', FALSE, 'dashboard');
             return;

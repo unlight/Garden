@@ -7,7 +7,7 @@ $(function() {
    }
       
    var currentHeight = null,
-      minHeight = 400,
+      minHeight = 600,
       remotePostMessage = null,
       inIframe = top !== self,
       inDashboard = gdn.definition('InDashboard', '') != '',
@@ -16,9 +16,6 @@ $(function() {
       forceRemoteUrl = gdn.definition('ForceRemoteUrl', '') != '',
       webroot = gdn.definition('WebRoot'),
       pathroot = gdn.definition('UrlFormat').replace('/{Path}', '').replace('{Path}', '');
-
-   if (!inIframe)
-      return;
       
    if (inIframe) {
       if ("postMessage" in parent) {
@@ -101,15 +98,13 @@ $(function() {
    }
 
    // If not embedded and we should be, redirect to the embedded version.
-   if (!inIframe && forceRemoteUrl && remoteUrl != '') {
+   if (!inIframe && forceRemoteUrl && (remoteUrl != '' || !(inDashboard && !embedDashboard))) {
       var path = document.location.toString().substr(webroot.length);
       var hashIndex = path.indexOf('#');
       if (hashIndex > -1)
          path = path.substr(0, hashIndex);
       
       document.location = remoteUrl + '#' + path;
-   } else if (inIframe && inDashboard && !embedDashboard) {
-      remotePostMessage('unembed', '*');
    }
 
    // hijack all anchors to see if they should go to "top" or be within the embed (ie. are they in Vanilla or not?)
@@ -127,8 +122,6 @@ $(function() {
    
       setHeight();
       setInterval(setHeight, 300);
-    
-      
       
       // Simulate a page unload when popups are opened (so they are scrolled into view).
       $('body').bind('popupReveal', function() {
@@ -137,6 +130,7 @@ $(function() {
       
       $(window).unload(function() { remotePostMessage('unload', '*'); });
    }
+   else return; // Ignore the rest if we're not embedded.
 
    var path = gdn.definition('Path', '~');
    if (path != '~') {
@@ -167,6 +161,12 @@ $(function() {
             // return false;
          }
       });
+   }
+   
+   // Unembed the dashboard.
+   // Note: This must be done AFTER the location is set.
+   if (inIframe && inDashboard && !embedDashboard) {
+      remotePostMessage('unembed', '*');
    }
 
 });

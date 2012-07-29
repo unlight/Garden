@@ -28,6 +28,7 @@ class ConversationMessageModel extends Gdn_Model {
     */
    public function __construct() {
       parent::__construct('ConversationMessage');
+      $this->PrimaryKey = 'MessageID';
    }
    
    /**
@@ -57,6 +58,7 @@ class ConversationMessageModel extends Gdn_Model {
       return $this->SQL
          ->Select('cm.*')
          ->Select('iu.Name', '', 'InsertName')
+         ->Select('iu.Email', '', 'InsertEmail')
          ->Select('iu.Photo', '', 'InsertPhoto')
          ->From('ConversationMessage cm')
          ->Join('Conversation c', 'cm.ConversationID = c.ConversationID')
@@ -70,6 +72,18 @@ class ConversationMessageModel extends Gdn_Model {
          ->OrderBy('cm.DateInserted', 'asc')
          ->Limit($Limit, $Offset)
          ->Get();
+   }
+   
+   /**
+    * Get the data from the model based on its primary key.
+    *
+    * @param mixed $ID The value of the primary key in the database.
+    * @param string $DatasetType The format of the result dataset.
+    * @return Gdn_DataSet
+    */
+   public function GetID($ID, $DatasetType = FALSE) {
+      $Result = $this->GetWhere(array("MessageID" => $ID))->FirstRow($DatasetType);
+      return $Result;
    }
    
    /**
@@ -155,7 +169,7 @@ class ConversationMessageModel extends Gdn_Model {
     * @param array $FormPostValues Values submitted via form.
     * @return int Unique ID of message created or updated.
     */
-   public function Save($FormPostValues) {
+   public function Save($FormPostValues, $Conversation = NULL) {
       $Session = Gdn::Session();
       
       // Define the primary key in this model's table.
@@ -169,12 +183,14 @@ class ConversationMessageModel extends Gdn_Model {
       $MessageID = FALSE;
       if($this->Validate($FormPostValues)) {
          $Fields = $this->Validation->SchemaValidationFields(); // All fields on the form that relate to the schema
-         $Fields['Format'] = C('Conversations.Message.Format','Ham');
+         TouchValue('Format', $Fields, C('Garden.InputFormatter', 'Html'));
          
          $MessageID = $this->SQL->Insert($this->Name, $Fields);
          $this->LastMessageID = $MessageID;
          $ConversationID = ArrayValue('ConversationID', $Fields, 0);
-         $Px = $this->SQL->Database->DatabasePrefix;
+
+         if (!$Conversation)
+            $Conversation = $this->SQL->GetWhere('Conversation', array('ConversationID' => $ConversationID))->FirstRow(DATASET_TYPE_ARRAY);
 
          // Get the new message count for the conversation.
          $SQLR = $this->SQL
@@ -200,34 +216,73 @@ class ConversationMessageModel extends Gdn_Model {
          $this->SQL
             ->Update('UserConversation uc')
             ->Set('uc.LastMessageID', $MessageID)
-            ->Set('uc.CountReadMessages', "case uc.UserID when {$Session->UserID} then $CountMessages else uc.CountReadMessages end", FALSE)
             ->Where('uc.ConversationID', $ConversationID)
             ->Where('uc.Deleted', '0')
             ->Where('uc.CountReadMessages', $CountMessages - 1)
+            ->Where('uc.UserID <>', $Session->UserID)
             ->Put();
 
-         // Incrememnt the users' inbox counts.
+         // Update the sending user.
          $this->SQL
-            ->Update('User u')
-            ->Join('UserConversation uc', 'u.UserID = uc.UserID')
-            ->Set('u.CountUnreadConversations', 'coalesce(u.CountUnreadConversations, 0) + 1', FALSE)
-            ->Where('uc.ConversationID', $ConversationID)
-            ->Where('uc.LastMessageID', $MessageID)
-            ->Where('uc.UserID <>', $Session->UserID)
+            ->Update('UserConversation uc')
+            ->Set('uc.CountReadMessages', $CountMessages)
+            ->Set('Deleted', 0)
+            ->Where('ConversationID', $ConversationID)
+            ->Where('UserID', $Session->UserID)
             ->Put();
 
-         // Grab the users that need to be notified.
-         $UnreadData = $this->SQL
-            ->Select('uc.UserID')
-            ->From('UserConversation uc')
-            ->Where('uc.ConversationID', $ConversationID) // hopefully coax this index.
-            // ->Where('uc.LastMessageID', $MessageID)
-            ->Where('uc.UserID <>', $Session->UserID)
-            ->Get();
+         // Find users involved in this conversation
+         $UserData = $this->SQL
+            ->Select('UserID')
+            ->Select('LastMessageID')
+            ->Select('Deleted')
+            ->From('UserConversation')
+            ->Where('ConversationID', $ConversationID)
+            ->Get()->Result(DATASET_TYPE_ARRAY);
+         
+         $UpdateCountUserIDs = array();
+         $NotifyUserIDs = array();
+         
+         // Collapse for call to UpdateUserCache and ActivityModel.
+         $InsertUserFound = FALSE;
+         foreach ($UserData as $UpdateUser) {
+            $LastMessageID = GetValue('LastMessageID', $UpdateUser);
+            $UserID = GetValue('UserID', $UpdateUser);
+            $Deleted = GetValue('Deleted', $UpdateUser);
+            
+            if ($UserID == GetValue('InsertUserID', $Fields)) {
+               $InsertUserFound = TRUE;
+               if ($Deleted) {
+                  $this->SQL->Put('UserConversation', array('Deleted' => 0), array('ConversationID' => $ConversationID, 'UserID' => $UserID));
+               }
+            }
+            
+            // Update unread for users that were up to date
+            if ($LastMessageID == $MessageID)
+               $UpdateCountUserIDs[] = $UserID;
+            
+            // Send activities to users that have not deleted the conversation
+            if (!$Deleted)
+               $NotifyUserIDs[] = $UserID;
+         }
+         
+         if (!$InsertUserFound) {
+            $UserConversation = array(
+               'UserID' => GetValue('InsertUserID', $Fields),
+               'ConversationID' => $ConversationID,
+               'LastMessageID' => $LastMessageID,
+               'CountReadMessages' => $CountMessages);
+            $this->SQL->Insert('UserConversation', $UserConversation);
+         }
+         
+         if (sizeof($UpdateCountUserIDs)) {
+            $ConversationModel = new ConversationModel();
+            $ConversationModel->UpdateUserUnreadCount($UpdateCountUserIDs, TRUE);
+         }
 
          $ActivityModel = new ActivityModel();
-         foreach ($UnreadData->Result() as $User) {
-            if ($Session->UserID == $User->UserID)
+         foreach ($NotifyUserIDs as $NotifyUserID) {
+            if ($Session->UserID == $NotifyUserID)
                continue; // don't notify self.
 
             // Notify the users of the new message.
@@ -235,12 +290,16 @@ class ConversationMessageModel extends Gdn_Model {
                $Session->UserID,
                'ConversationMessage',
                '',
-               $User->UserID,
+               $NotifyUserID,
                '',
-               "/messages/$ConversationID#$MessageID",
+               "/messages/{$ConversationID}#{$MessageID}",
                FALSE
             );
-            $Story = ArrayValue('Body', $Fields, '');
+            $Story = GetValue('Body', $Fields, '');
+            
+            if (C('Conversations.Subjects.Visible')) {
+               $Story = ConcatSep("\n\n", GetValue('Subject', $Conversation, ''), $Story);
+            }
             $ActivityModel->SendNotification($ActivityID, $Story);
          }
       }

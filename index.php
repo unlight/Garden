@@ -1,14 +1,19 @@
 <?php
+
+/**
+ * Application Gateway
+ *
+ * @author Mark O'Sullivan <mark@vanillaforums.com>
+ * @author Todd Burry <todd@vanillaforums.com>
+ * @author Tim Gunter <tim@vanillaforums.com>
+ * @copyright 2003 Vanilla Forums, Inc
+ * @license http://www.opensource.org/licenses/gpl-2.0.php GPLv2
+ * @package Garden
+ * @since 2.0
+ */
+
 define('APPLICATION', 'Vanilla');
-define('APPLICATION_VERSION', '2.0.18b1');
-/*
-Copyright 2008, 2009 Vanilla Forums Inc.
-This file is part of Garden.
-Garden is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
-Garden is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
-You should have received a copy of the GNU General Public License along with Garden.  If not, see <http://www.gnu.org/licenses/>.
-Contact Vanilla Forums Inc. at support [at] vanillaforums [dot] com
-*/
+define('APPLICATION_VERSION', '2.1a25');
 
 // Report and track all errors.
 error_reporting(E_ERROR | E_PARSE | E_CORE_ERROR | E_COMPILE_ERROR | E_USER_ERROR | E_RECOVERABLE_ERROR);
@@ -44,6 +49,8 @@ require_once(PATH_ROOT.'/bootstrap.php');
 Gdn::Authenticator()->StartAuthenticator();
 
 // 3. Create and configure the dispatcher.
+// TIM: Removed this change temporarily for .com hosting
+// Gdn::Authenticator()->StartAuthenticator();
 $Dispatcher = Gdn::Dispatcher();
 
 $EnabledApplications = Gdn::ApplicationManager()->EnabledApplicationFolders();
@@ -51,8 +58,8 @@ $Dispatcher->EnabledApplicationFolders($EnabledApplications);
 $Dispatcher->PassProperty('EnabledApplications', $EnabledApplications);
 
 // 4. Process the request.
+$Dispatcher->Start();
 $Dispatcher->Dispatch();
-$Dispatcher->Cleanup();
 
 // 5. Finish profiling and save results to disk, if requested
 if (defined('PROFILER') && PROFILER) {
@@ -83,6 +90,6 @@ if (defined('PROFILER') && PROFILER) {
    //
    $run_id = $xhprof_runs->save_run($xhprof_data, $xhprof_namespace);
 
-   echo "http://{$XHPROF_SERVER_NAME}/index.php?run={$run_id}&source={$xhprof_namespace}\n";
+   echo CombinePaths(array("http://{$XHPROF_SERVER_NAME}","/?run={$run_id}&source={$xhprof_namespace}\n"));
 
 }

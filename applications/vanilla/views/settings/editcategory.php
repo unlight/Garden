@@ -18,7 +18,7 @@ echo $this->Form->Errors();
 		echo ' ';
 		echo Gdn::Request()->Url('category', TRUE);
 		echo '/';
-		echo Wrap($this->Form->GetValue('UrlCode'));
+		echo Wrap(htmlspecialchars($this->Form->GetValue('UrlCode')));
 		echo $this->Form->TextBox('UrlCode');
 		echo '/';
 		echo Anchor(T('edit'), '#', 'Edit');
@@ -32,6 +32,11 @@ echo $this->Form->Errors();
          echo $this->Form->TextBox('Description', array('MultiLine' => TRUE));
       ?>
    </li>
+   <?php
+   echo $this->Form->Simple(
+      $this->Data('_ExtendedFields', array()),
+      array('Wrap' => array('', '')));
+   ?>
    <li>
       <?php
       echo $this->Form->CheckBox('Archived', 'This category is archived.');

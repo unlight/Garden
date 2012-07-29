@@ -12,7 +12,7 @@ Contact Vanilla Forums Inc. at support [at] vanillaforums [dot] com
 $PluginInfo['VanillaStats'] = array(
    'Name' => 'Vanilla Statistics',
    'Description' => 'Adds helpful graphs and information about activity on your forum over time (new users, discussions, comments, and pageviews).',
-   'Version' => '2.0.0b',
+   'Version' => '2.0.2',
    'MobileFriendly' => FALSE,
    'RequiredApplications' => array('Vanilla' => '2.0.18b'),
    'RequiredTheme' => FALSE, 
@@ -72,9 +72,13 @@ class VanillaStatsPlugin extends Gdn_Plugin {
     * dashboard application to render new statistics.
     */
    public function StatsDashboard($Sender) {
+      $StatsUrl = $this->AnalyticsServer;
+      if (!StringBeginsWith($StatsUrl, 'http:'))
+         $StatsUrl = "http://{$StatsUrl}";
+      
       // Tell the page where to find the Vanilla Analytics provider
-      $Sender->AddDefinition('VanillaStatsUrl', $this->AnalyticsServer);
-      $Sender->SetData('VanillaStatsUrl', $this->AnalyticsServer);
+      $Sender->AddDefinition('VanillaStatsUrl', $StatsUrl);
+      $Sender->SetData('VanillaStatsUrl', $StatsUrl);
       
       // Load javascript & css, check permissions, and load side menu for this page.
       $Sender->AddJsFile('settings.js');
@@ -195,7 +199,7 @@ class VanillaStatsPlugin extends Gdn_Plugin {
       $Sender->StampStart = strtotime(GetValue(0, $DateRangeParts));
       $Sender->StampEnd = strtotime(GetValue(1, $DateRangeParts));
       if (!$Sender->StampEnd)
-         $Sender->StampEnd = time();
+         $Sender->StampEnd = strtotime('yesterday');
          
       // If no date was provided, or the provided values were invalid, use defaults
       if (!$Sender->StampStart) {

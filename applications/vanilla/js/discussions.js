@@ -19,21 +19,24 @@ jQuery(document).ready(function($) {
             afterPageLoaded: function() { $(document).trigger('DiscussionPagingComplete'); }
          });
       });
+      
+   if ($('.AdminCheck :checkbox').not(':checked').length == 1)
+      $('.AdminCheck [name="Toggle"]').attr('checked', 'checked').change();
 
    /* Discussion Checkboxes */
-   $('.DiscussionsTabs .Administration :checkbox').click(function() {
+   $('.AdminCheck [name="Toggle"]').click(function() {
       if ($(this).attr('checked'))
-         $('.DataList .Administration :checkbox').attr('checked', 'checked');
+         $('.DataList .AdminCheck :checkbox, tbody .AdminCheck :checkbox').attr('checked', 'checked').change();
       else
-         $('.DataList .Administration :checkbox').removeAttr('checked');
+         $('.DataList .AdminCheck :checkbox, tbody .AdminCheck :checkbox').removeAttr('checked').change();
    });
-   $('.Administration :checkbox').click(function() {
+   $('.AdminCheck :checkbox').click(function() {
       // retrieve all checked ids
-      var checkIDs = $('.DataList .Administration :checkbox');
+      var checkIDs = $('.DataList .AdminCheck :checkbox, tbody .AdminCheck :checkbox');
       var aCheckIDs = new Array();
       checkIDs.each(function() {
-         item = $(this);
-         aCheckIDs[aCheckIDs.length] = { 'checkId' : item.val() , 'checked' : item.attr('checked') };
+         checkID = $(this);
+         aCheckIDs[aCheckIDs.length] = { 'checkId' : checkID.val() , 'checked' : checkID.attr('checked') };
       });
       $.ajax({
          type: "POST",

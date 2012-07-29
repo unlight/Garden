@@ -7,14 +7,51 @@ Garden is distributed in the hope that it will be useful, but WITHOUT ANY WARRAN
 You should have received a copy of the GNU General Public License along with Garden.  If not, see <http://www.gnu.org/licenses/>.
 Contact Vanilla Forums Inc. at support [at] vanillaforums [dot] com
 */
+/**
+ * Conversations Hooks
+ *
+ * @package Conversations
+ */
+ 
+/**
+ * Handles hooks into Dashboard and Vanilla.
+ *
+ * @since 2.0.0
+ * @package Conversations
+ */
 class ConversationsHooks implements Gdn_IPlugin {
+   
+   /**
+    *
+    * @param DbaController $Sender 
+    */
+   public function DbaController_CountJobs_Handler($Sender) {
+      $Counts = array(
+          'Conversation' => array('CountMessages', 'FirstMessageID', 'LastMessageID', 'DateUpdated', 'UpdateUserID')
+//          'Category' => array('CountDiscussions', 'CountComments', 'LastDiscussionID', 'LastCommentID')
+      );
+      
+      foreach ($Counts as $Table => $Columns) {
+         foreach ($Columns as $Column) {
+            $Name = "Recalculate $Table.$Column";
+            $Url = "/dba/counts.json?".http_build_query(array('table' => $Table, 'column' => $Column));
+            
+            $Sender->Data['Jobs'][$Name] = $Url;
+         }
+      }
+   }
    
    public function UserModel_SessionQuery_Handler($Sender) {
       // Add some extra fields to the session query
       //$Sender->SQL->Select('u.CountUnreadConversations');
    }
    
-   // Remove data when deleting a user
+   /**
+    * Remove data when deleting a user.
+    *
+    * @since 2.0.0
+    * @access public
+    */
    public function UserModel_BeforeDeleteUser_Handler($Sender) {
       $UserID = GetValue('UserID', $Sender->EventArguments);
       $Options = GetValue('Options', $Sender->EventArguments, array());
@@ -42,44 +79,108 @@ class ConversationsHooks implements Gdn_IPlugin {
          ->Put();
    }
    
-   public function ProfileController_AfterAddSideMenu_Handler(&$Sender) {
-      // Add a "send X a message" link to the side menu on the profile page
+   /**
+    * Add 'Inbox' to profile menu.
+    *
+    * @since 2.0.0
+    * @access public
+    */
+   public function ProfileController_AfterAddSideMenu_Handler($Sender) {
       $Session = Gdn::Session();
-      if ($Session->IsValid() && $Session->UserID != $Sender->User->UserID) {
+      if ($Session->IsValid() && $Session->UserID != $Sender->User->UserID && C('Conversations.Moderation.Allow', FALSE)) {
          $SideMenu = $Sender->EventArguments['SideMenu'];
-         $SideMenu->AddLink('Options', sprintf(T('Send %s a Message'), $Sender->User->Name), '/messages/add/'.$Sender->User->Name, FALSE, array('class' => 'MessageLink'));
-         
-
-//         if ($Session->CheckPermission('Conversations.Moderation.Manage')) {
-            $SideMenu->AddLink('Options', T('Inbox'), '/messages/inbox?userid='.$Sender->User->UserID, 'Conversations.Moderation.Manage', array('class' => 'InboxLink'));
-//         }
-
+         $SideMenu->AddLink('Options', T('Inbox'), '/messages/inbox?userid='.$Sender->User->UserID, 'Conversations.Moderation.Manage', array('class' => 'InboxLink'));
          $Sender->EventArguments['SideMenu'] = $SideMenu;
       }
    }
    
-   public function ProfileController_AfterPreferencesDefined_Handler(&$Sender) {
-      $Sender->Preferences['Notifications']['Email.ConversationMessage'] = T('Notify me of private messages.');
-      $Sender->Preferences['Notifications']['Email.AddedToConversation'] = T('Notify me when I am added to private conversations.');
-      $Sender->Preferences['Notifications']['Popup.ConversationMessage'] = T('Notify me of private messages.');
-      $Sender->Preferences['Notifications']['Popup.AddedToConversation'] = T('Notify me when I am added to private conversations.');
+   /**
+    * Add 'Inbox' to profile menu.
+    *
+    * @since 2.0.0
+    * @access public
+    */
+   public function ProfileController_AddProfileTabs_Handler($Sender) {
+      if (Gdn::Session()->IsValid()) {
+         $Inbox = T('Inbox');
+         $InboxHtml = Sprite('SpInbox').$Inbox;
+         $InboxLink = '/messages/all';
+         
+         if (Gdn::Session()->UserID != $Sender->User->UserID) {
+            if (C('Conversations.Moderation.Allow', FALSE) && Gdn::Session()->CheckPermission('Conversations.Moderation.Manage')) {
+               $CountUnread = $Sender->User->CountUnreadConversations;
+               $InboxLink .= "?userid={$Sender->User->UserID}";
+            } else {
+               return;
+            }
+         } else {
+            // Nothing
+            $CountUnread = Gdn::Session()->User->CountUnreadConversations;
+         }
+         
+         if (is_numeric($CountUnread) && $CountUnread > 0)
+            $InboxHtml .= ' <span class="Aside"><span class="Count">'.$CountUnread.'</span></span>';
+         $Sender->AddProfileTab($Inbox, $InboxLink, 'Inbox', $InboxHtml);
+      }
    }
    
-   public function Base_Render_Before(&$Sender) {
+   /**
+    * Add "Message" option to profile options.
+    */
+   public function ProfileController_BeforeProfileOptions_Handler($Sender, $Args) {
+      if (!$Sender->EditMode && Gdn::Session()->IsValid() && Gdn::Session()->UserID != $Sender->User->UserID)
+         $Sender->EventArguments['MemberOptions'][] = array(
+            'Text' => Sprite('SpMessage').T('Message'),
+            'Url' => '/messages/add/'.$Sender->User->Name,
+            'CssClass' => 'MessageUser'
+         );
+   }   
+   
+   
+   /**
+    * Additional options for the Preferences screen.
+    *
+    * @since 2.0.0
+    * @access public
+    */
+   public function ProfileController_AfterPreferencesDefined_Handler($Sender) {
+      $Sender->Preferences['Notifications']['Email.ConversationMessage'] = T('Notify me of private messages.');
+      $Sender->Preferences['Notifications']['Popup.ConversationMessage'] = T('Notify me of private messages.');
+   }
+   
+   /**
+    * Add 'Inbox' to global menu.
+    *
+    * @since 2.0.0
+    * @access public
+    */
+   public function Base_Render_Before($Sender) {
       // Add the menu options for conversations
-      $Session = Gdn::Session();
-      if ($Sender->Menu && $Session->IsValid()) {
+      if ($Sender->Menu && Gdn::Session()->IsValid()) {
          $Inbox = T('Inbox');
-         $CountUnreadConversations = $Session->User->CountUnreadConversations;
+         $CountUnreadConversations = GetValue('CountUnreadConversations', Gdn::Session()->User);
          if (is_numeric($CountUnreadConversations) && $CountUnreadConversations > 0)
-            $Inbox .= ' <span>'.$CountUnreadConversations.'</span>';
+            $Inbox .= ' <span class="Alert">'.$CountUnreadConversations.'</span>';
             
          $Sender->Menu->AddLink('Conversations', $Inbox, '/messages/all', FALSE, array('Standard' => TRUE));
       }
    }
    
-   // Load some information into the BuzzData collection
-   public function SettingsController_DashboardData_Handler(&$Sender) {
+   /**
+    * Let us add Messages to the Inbox page.
+    */
+   public function Base_AfterGetLocationData_Handler($Sender, $Args) {
+      $Args['ControllerData']['Conversations/messages/inbox'] = T('Inbox Page');
+   }
+   
+   /**
+    * Load some information into the BuzzData collection (for Dashboard report).
+    *
+    * @since 2.0.?
+    * @access public
+    */
+   public function SettingsController_DashboardData_Handler($Sender) {
+      /*
       $ConversationModel = new ConversationModel();
       // Number of Conversations
       $CountConversations = $ConversationModel->GetCountWhere();
@@ -99,8 +200,15 @@ class ConversationsHooks implements Gdn_IPlugin {
       $Sender->BuzzData[T('New messages in the last day')] = number_format($ConversationMessageModel->GetCountWhere(array('DateInserted >=' => Gdn_Format::ToDateTime(strtotime('-1 day')))));
       // Number of New Messages in the last week
       $Sender->BuzzData[T('New messages in the last week')] = number_format($ConversationMessageModel->GetCountWhere(array('DateInserted >=' => Gdn_Format::ToDateTime(strtotime('-1 week')))));
+      */
    }   
    
+   /**
+    * Database & config changes to be done upon enable.
+    *
+    * @since 2.0.0
+    * @access public
+    */
    public function Setup() {
       $Database = Gdn::Database();
       $Config = Gdn::Factory(Gdn::AliasConfig);

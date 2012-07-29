@@ -1,26 +1,29 @@
 <?php if (!defined('APPLICATION')) exit(); ?>
-<div class="Tabs ActivityTabs">
-   <ul>
-      <li class="Active"><?php echo Anchor(T('Recent Activity'), 'activity'); ?></li>
-   </ul>
-</div>
+<div class="ActivityFormWrap">
+<h1 class="H"><?php echo $this->Data('Title'); ?></h1>
 <?php
+include_once $this->FetchViewLocation('helper_functions');
+
 $this->FireEvent('BeforeStatusForm');
 $Session = Gdn::Session();
-if ($Session->IsValid()) {
-   echo $this->Form->Open(array('action' => Url('/activity'), 'class' => 'Activity'));
+if ($Session->CheckPermission('Garden.Profiles.Edit')) {
+   echo $this->Form->Open(array('action' => Url('/activity/post/'.$this->Data('Filter')), 'class' => 'Activity'));
    echo $this->Form->Errors();
    echo Wrap($this->Form->TextBox('Comment', array('MultiLine' => TRUE)), 'div', array('class' => 'TextBoxWrapper'));
-   echo $this->Form->Button(T('Share'));
+   echo $this->Form->Button('Share', array('class' => 'Button Primary'));
    echo $this->Form->Close();
 }
-if ($this->ActivityData->NumRows() > 0) {
-   echo '<ul class="DataList Activities">';
+echo '</div>';
+echo '<ul class="DataList Activities">';
+
+$Activities = $this->Data('Activities', array());
+if (count($Activities) > 0) {
    include($this->FetchViewLocation('activities', 'activity', 'dashboard'));
-   echo '</ul>';
-   echo $this->Pager->ToString('more');
+   PagerModule::Write(array('CurrentRecords' => count($Activities)));
 } else {
    ?>
-<div class="Empty"><?php echo T('Not much happening here, yet.'); ?></div>
+<li><div class="Empty"><?php echo T('Not much happening here, yet.'); ?></div></li>
    <?php
 }
+
+echo '</ul>';

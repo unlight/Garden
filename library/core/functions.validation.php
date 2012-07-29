@@ -1,14 +1,8 @@
 <?php if (!defined('APPLICATION')) exit();
-/*
-Copyright 2008, 2009 Vanilla Forums Inc.
-This file is part of Garden.
-Garden is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
-Garden is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
-You should have received a copy of the GNU General Public License along with Garden.  If not, see <http://www.gnu.org/licenses/>.
-Contact Vanilla Forums Inc. at support [at] vanillaforums [dot] com
-*/
 
 /**
+ * Validation functions
+ * 
  * All of these functions are used by ./class.validation.php to validate form
  * input strings. With the exception of ValidateRegex, each function receives
  * two parameters (the field value and the related database field properties)
@@ -20,7 +14,11 @@ Contact Vanilla Forums Inc. at support [at] vanillaforums [dot] com
  * are: (string) Name, (bool) PrimaryKey, (string) Type, (bool) AllowNull,
  * (string) Default, (int) Length, (array) Enum.
  *
+ * @author Mark O'Sullivan <markm@vanillaforums.com>
+ * @copyright 2003 Vanilla Forums, Inc
+ * @license http://www.opensource.org/licenses/gpl-2.0.php GPL
  * @package Garden
+ * @since 2.0
  */
 
 if (!function_exists('ValidateCaptcha')) {
@@ -116,11 +114,27 @@ if (!function_exists('ValidateWebAddress')) {
    }
 }
 
+if (!function_exists('ValidateUsernameRegex')) {
+   function ValidateUsernameRegex() {
+      static $ValidateUsernameRegex;
+      
+      if (is_null($ValidateUsernameRegex)) {
+         $ValidateUsernameRegex = sprintf("[%s]%s",
+            C("Garden.User.ValidationRegex","\d\w_"),
+            C("Garden.User.ValidationLength","{3,20}"));
+      }
+      
+      return $ValidateUsernameRegex;
+   }
+}
+
 if (!function_exists('ValidateUsername')) {
    function ValidateUsername($Value, $Field = '') {
+      $ValidateUsernameRegex = ValidateUsernameRegex();
+      
       return ValidateRegex(
          $Value,
-         '/^([\d\w_]{3,20})?$/si'
+         "/^({$ValidateUsernameRegex})?$/siu"
       );
    }
 }
@@ -134,10 +148,18 @@ if (!function_exists('ValidateUrlString')) {
    }
 }
 
+if (!function_exists('ValidateUrlStringRelaxed')) {
+   function ValidateUrlStringRelaxed($Value, $Field = '') {
+      if (preg_match('`[/\\\<>\'"]`', $Value))
+         return FALSE;
+      return TRUE;
+   }
+}
+
 if (!function_exists('ValidateDate')) {
    function ValidateDate($Value) {
       // Dates should be in YYYY-MM-DD or YYYY-MM-DD HH:MM:SS format
-      if (strlen($Value) == 0) {
+      if (empty($Value)) {
 			return TRUE; // blank dates validated through required.
 		} else {
 			$Matches = array();
@@ -198,7 +220,7 @@ if (!function_exists('ValidateBoolean')) {
 
 if (!function_exists('ValidateDecimal')) {
    function ValidateDecimal($Value, $Field) {
-       if (is_object($Field) && $Field->AllowNull && $Value === '') return TRUE;
+       if (is_object($Field) && $Field->AllowNull && $Value === NULL) return TRUE;
        return is_numeric($Value);
    }
 }
@@ -235,6 +257,12 @@ if (!function_exists('ValidateLength')) {
 if (!function_exists('ValidateEnum')) {
    function ValidateEnum($Value, $Field) {
       return in_array($Value, $Field->Enum);
+   }
+}
+
+if (!function_exists('ValidateFormat')) {
+   function ValidateFormat($Value) {
+      return strcasecmp($Value, 'Raw') != 0 || Gdn::Session()->CheckPermission('Garden.Settings.Manage');
    }
 }
 
