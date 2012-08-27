@@ -38,12 +38,14 @@ $Construct->PrimaryKey('CategoryID')
    ->Column('Description', 'varchar(500)', TRUE)
    ->Column('Sort', 'int', TRUE)
    ->Column('PermissionCategoryID', 'int', '-1') // default to root.
+   ->Column('HideAllDiscussions', 'tinyint(1)', '0')
    ->Column('InsertUserID', 'int', FALSE, 'key')
    ->Column('UpdateUserID', 'int', TRUE)
    ->Column('DateInserted', 'datetime')
    ->Column('DateUpdated', 'datetime')
    ->Column('LastCommentID', 'int', NULL)
    ->Column('LastDiscussionID', 'int', NULL)
+   ->Column('LastDateInserted', 'datetime', NULL)
    ->Set($Explicit, $Drop);
 
 $RootCategoryInserted = FALSE;
@@ -81,7 +83,7 @@ $Construct
    ->PrimaryKey('DiscussionID')
    ->Column('Type', 'varchar(10)', TRUE, 'index')
    ->Column('ForeignID', 'varchar(32)', TRUE, 'index') // For relating foreign records to discussions
-   ->Column('CategoryID', 'int', FALSE, 'key')
+   ->Column('CategoryID', 'int', FALSE, array('key', 'index.CategoryPages'))
    ->Column('InsertUserID', 'int', FALSE, 'key')
    ->Column('UpdateUserID', 'int')
    ->Column('FirstCommentID', 'int', TRUE)
@@ -100,7 +102,7 @@ $Construct
    ->Column('DateUpdated', 'datetime', TRUE)
    ->Column('InsertIPAddress', 'varchar(15)', TRUE)
    ->Column('UpdateIPAddress', 'varchar(15)', TRUE)
-   ->Column('DateLastComment', 'datetime', NULL, 'index')
+   ->Column('DateLastComment', 'datetime', NULL, array('index', 'index.CategoryPages'))
 	->Column('LastCommentUserID', 'int', TRUE)
 	->Column('Score', 'float', NULL)
    ->Column('Attributes', 'text', TRUE)

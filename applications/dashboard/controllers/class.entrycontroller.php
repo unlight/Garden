@@ -294,7 +294,8 @@ class EntryController extends Gdn_Controller {
       // The different providers can check to see if they are being used and modify the data array accordingly.
       $this->EventArguments = array($Method);
       
-      // Fire ConnectData event & error handling
+      // Fire ConnectData event & error handling.
+      $CurrentData = $this->Form->FormValues();
       try {
          $this->FireEvent('ConnectData');
       } catch (Gdn_UserException $Ex) {
@@ -308,9 +309,13 @@ class EntryController extends Gdn_Controller {
          return $this->Render('ConnectError');
       }
       
-      if (!$this->Form->GetFormValue('Email')) {
+      if (!$this->Form->GetFormValue('Email') || $this->Form->GetFormValue('EmailVisible')) {
          $this->Form->SetFormValue('EmailVisible', TRUE);
          $this->Form->AddHidden('EmailVisible', TRUE);
+         
+         if ($IsPostBack) {
+            $this->Form->SetFormValue('Email', GetValue('Email', $CurrentData));
+         }
       }
 
       $FormData = $this->Form->FormValues(); // debug
@@ -383,13 +388,17 @@ class EntryController extends Gdn_Controller {
 //         $this->_SetRedirect(TRUE);
          $this->_SetRedirect($this->Request->Get('display') == 'popup');
       } elseif ($this->Form->GetFormValue('Name') || $this->Form->GetFormValue('Email')) {
+         $NameUnique = C('Garden.Registration.NameUnique', TRUE);
+         $EmailUnique = C('Garden.Registration.EmailUnique', TRUE);
+         $AutoConnect = C('Garden.Registration.AutoConnect');
+         
          // Get the existing users that match the name or email of the connection.
          $Search = FALSE;
-         if ($this->Form->GetFormValue('Name')) {
+         if ($this->Form->GetFormValue('Name') && $NameUnique) {
             $UserModel->SQL->OrWhere('Name', $this->Form->GetFormValue('Name'));
             $Search = TRUE;
          }
-         if ($this->Form->GetFormValue('Email')) {
+         if ($this->Form->GetFormValue('Email') && ($EmailUnique || $AutoConnect)) {
             $UserModel->SQL->OrWhere('Email', $this->Form->GetFormValue('Email'));
             $Search = TRUE;
          }
@@ -400,7 +409,7 @@ class EntryController extends Gdn_Controller {
             $ExistingUsers = array();
          
          // Check to automatically link the user.
-         if (C('Garden.Registration.AutoConnect') && count($ExistingUsers) > 0) {
+         if ($AutoConnect && count($ExistingUsers) > 0) {
             foreach ($ExistingUsers as $Row) {
                if ($this->Form->GetFormValue('Email') == $Row['Email']) {
                   $UserID = $Row['UserID'];
@@ -435,9 +444,7 @@ class EntryController extends Gdn_Controller {
                }
             }
          }
-
-         $NameUnique = C('Garden.Registration.NameUnique', TRUE);
-         $EmailUnique = C('Garden.Registration.EmailUnique', TRUE);
+         
          $CurrentUserID = Gdn::Session()->UserID;
 
          // Massage the existing users.
@@ -483,7 +490,9 @@ class EntryController extends Gdn_Controller {
             $User['Attributes'] = $this->Form->GetFormValue('Attributes', NULL);
             $User['Email'] = $this->Form->GetFormValue('ConnectEmail', $this->Form->GetFormValue('Email', NULL));
 
-            $UserID = $UserModel->InsertForBasic($User, FALSE, array('ValidateEmail' => FALSE, 'NoConfirmEmail' => TRUE, 'SaveRoles' => $SaveRoles));
+//            $UserID = $UserModel->InsertForBasic($User, FALSE, array('ValidateEmail' => FALSE, 'NoConfirmEmail' => TRUE, 'SaveRoles' => $SaveRoles));
+            $UserID = $UserModel->Register($User, array('CheckCaptcha' => FALSE, 'ValidateEmail' => FALSE, 'NoConfirmEmail' => TRUE, 'SaveRoles' => $SaveRoles));
+            
             $User['UserID'] = $UserID;
             $this->Form->SetValidationResults($UserModel->ValidationResults());
 

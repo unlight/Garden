@@ -48,7 +48,7 @@ if (!function_exists('ButtonGroup')):
     * @param array $Links An array of arrays with the following keys:
     *  - Text: The text of the link.
     *  - Url: The url of the link.
-    * @param string $CssClass The css class of the link.
+    * @param string|array $CssClass The css class of the link. This can be a two-item array where the second element will be added to the buttons.
     * @param string|false $Default The url of the default link.
     * @since 2.1
     */
@@ -58,6 +58,10 @@ if (!function_exists('ButtonGroup')):
       
       $Text = $Links[0]['Text'];
       $Url = $Links[0]['Url'];
+      
+      $ButtonClass = '';
+      if (is_array($CssClass))
+         list($CssClass, $ButtonClass) = $CssClass;
       
       if ($Default) {
          // Find the default button. 
@@ -75,11 +79,13 @@ if (!function_exists('ButtonGroup')):
          echo Anchor($Text, $Url, $CssClass);
       } else {
          // NavButton or Button?
-         $ButtonCss = strpos($CssClass, 'NavButton') !== FALSE ? 'NavButton' : 'Button';
+         $ButtonClass = ConcatSep(' ', $ButtonClass, strpos($CssClass, 'NavButton') !== FALSE ? 'NavButton' : 'Button');
+         if (strpos($CssClass, 'Primary') !== FALSE)
+            $ButtonClass .= ' Primary';
          // Strip "Button" or "NavButton" off the group class.
          echo '<div class="ButtonGroup '.str_replace(array('NavButton', 'Button'), array('',''), $CssClass).'">';
-            echo Anchor($Text, $Url, $ButtonCss);
-            echo Anchor(Sprite('SpDropdownHandle'), '#', $ButtonCss.' Handle');
+            echo Anchor($Text, $Url, $ButtonClass);
+            echo Anchor(Sprite('SpDropdownHandle'), '#', $ButtonClass.' Handle');
             echo '<ul class="Dropdown MenuItems">';
                foreach ($Links as $Link) {
                   echo Wrap(Anchor($Link['Text'], $Link['Url'], GetValue('CssClass', $Link, '')), 'li');
@@ -362,6 +368,27 @@ if (!function_exists('Img')) {
          $Image = SmartAsset($Image, $WithDomain);
 
       return '<img src="'.$Image.'"'.Attribute($Attributes).' />';
+   }
+}
+
+if (!function_exists('InCategory')) {
+   /**
+    * Returns whether or not the page is in a given category.
+    * 
+    * @param string $Category The url code of the category.
+    * @return boolean
+    * @since 2.1
+    */
+   function InCategory($Category) {
+      $Breadcrumbs = (array)Gdn::Controller()->Data('Breadcrumbs', array());
+      
+      foreach ($Breadcrumbs as $Breadcrumb) {
+         if (isset($Breadcrumb['CategoryID']) && strcasecmp($Breadcrumb['UrlCode'], $Category) == 0) {
+            return TRUE;
+         }
+      }
+      
+      return FALSE;
    }
 }
 

@@ -23,6 +23,12 @@ class CategoryModel extends Gdn_Model {
    const CACHE_KEY = 'Categories';
    
    public $Watching = FALSE;
+   
+   /**
+    * Merged Category data, including Pure + UserCategory
+    * 
+    * @var array
+    */
    public static $Categories = NULL;
 
    /**
@@ -49,7 +55,7 @@ class CategoryModel extends Gdn_Model {
       $Watch = array();
       
       foreach ($Categories as $CategoryID => $Category) {
-         if ($Category['PermsDiscussionsView'] && $Category['Following']) {
+         if ($Category['PermsDiscussionsView'] && $Category['Following'] && !GetValue('HideAllDiscussions', $Category)) {
             $Watch[] = $CategoryID;
          }
       }
@@ -72,11 +78,12 @@ class CategoryModel extends Gdn_Model {
     * @return object DataObject
     */
    public static function Categories($ID = FALSE) {
+      
       if (self::$Categories == NULL) {
          // Try and get the categories from the cache.
-         $Categories = Gdn::Cache()->Get(self::CACHE_KEY);
+         self::$Categories = Gdn::Cache()->Get(self::CACHE_KEY);
          
-         if (!$Categories) {
+         if (!self::$Categories) {
             $Sql = Gdn::SQL();
             $Sql = clone $Sql;
             $Sql->Reset();
@@ -88,17 +95,15 @@ class CategoryModel extends Gdn_Model {
                ->Join('Comment lc', 'c.LastCommentID = lc.CommentID', 'left')
                ->OrderBy('c.TreeLeft');
 
-            $Categories = array_merge(array(), $Sql->Get()->ResultArray());
-            $Categories = Gdn_DataSet::Index($Categories, 'CategoryID');
-            self::CalculateData($Categories);
-            Gdn::Cache()->Store(self::CACHE_KEY, $Categories, array(Gdn_Cache::FEATURE_EXPIRY => 600));
+            self::$Categories = array_merge(array(), $Sql->Get()->ResultArray());
+            self::$Categories = Gdn_DataSet::Index(self::$Categories, 'CategoryID');
+            self::BuildCache();
          }
          
-         self::JoinUserData($Categories, TRUE);
+         self::JoinUserData(self::$Categories, TRUE);
          
-         self::$Categories = $Categories;
       }
-
+      
       if ($ID !== FALSE) {
          if (!is_numeric($ID) && $ID) {
             foreach (self::$Categories as $Category) {
@@ -118,6 +123,45 @@ class CategoryModel extends Gdn_Model {
          return $Result;
       }
    }
+   
+   /**
+    * Build and augment the category cache
+    * 
+    * @param array $Categories
+    */
+   protected static function BuildCache() {
+      self::CalculateData(self::$Categories);
+      self::JoinRecentPosts(self::$Categories);
+      Gdn::Cache()->Store(self::CACHE_KEY, self::$Categories, array(Gdn_Cache::FEATURE_EXPIRY => 600));
+   }
+   
+   /**
+    * 
+    * 
+    * @since 2.0.18
+    * @access public
+    * @param array $Data Dataset.
+    */
+   protected static function CalculateData(&$Data) {
+		foreach ($Data as &$Category) {
+         $Category['CountAllDiscussions'] = $Category['CountDiscussions'];
+         $Category['CountAllComments'] = $Category['CountComments'];
+         $Category['Url'] = CategoryUrl($Category);
+         $Category['ChildIDs'] = array();
+		}
+      
+      $Keys = array_reverse(array_keys($Data));
+      foreach ($Keys as $Key) {
+         $Cat = $Data[$Key];
+         $ParentID = $Cat['ParentCategoryID'];
+
+         if (isset($Data[$ParentID]) && $ParentID != $Key) {
+            $Data[$ParentID]['CountAllDiscussions'] += $Cat['CountAllDiscussions'];
+            $Data[$ParentID]['CountAllComments'] += $Cat['CountAllComments'];
+            array_unshift($Data[$ParentID]['ChildIDs'], $Key);
+         }
+      }
+	}
    
    public static function ClearCache() {
       Gdn::Cache()->Remove(self::CACHE_KEY);
@@ -195,6 +239,31 @@ class CategoryModel extends Gdn_Model {
                $this->SetField($CategoryID, $Set);
             }
             break;
+         case 'LastDateInserted':
+            $Categories = $this->SQL
+               ->Select('ca.CategoryID')
+               ->Select('d.DateInserted', '', 'DateLastDiscussion')
+               ->Select('c.DateInserted', '', 'DateLastComment')
+         
+               ->From('Category ca')
+               ->Join('Discussion d', 'd.DiscussionID = ca.LastDiscussionID')
+               ->Join('Comment c', 'c.CommentID = ca.LastCommentID')
+               ->Get()->ResultArray();
+            
+            foreach ($Categories as $Category) {
+               $DateLastDiscussion = GetValue('DateLastDiscussion', $Category);
+               $DateLastComment = GetValue('DateLastComment', $Category);
+               
+               $MaxDate = $DateLastComment;
+               if (is_null($DateLastComment) || $DateLastDiscussion > $MaxDate)
+                  $MaxDate = $DateLastDiscussion;
+               
+               if (is_null($MaxDate)) continue;
+               
+               $CategoryID = (int)$Category['CategoryID'];
+               $this->SetField($CategoryID, 'LastDateInserted', $MaxDate);
+            }
+            break;
       }
       self::ClearCache();
       return $Result;
@@ -253,14 +322,18 @@ class CategoryModel extends Gdn_Model {
          $Joined = TRUE;
       }
       
+      // Create a fresh copy of the Sql object so as not to pollute.
+      $Sql = clone Gdn::SQL();
+      $Sql->Reset();
+      
       // Grab the discussions.
       if (count($DiscussionIDs) > 0) {
-         $Discussions = Gdn::SQL()->WhereIn('DiscussionID', $DiscussionIDs)->Get('Discussion')->ResultArray();
+         $Discussions = $Sql->WhereIn('DiscussionID', $DiscussionIDs)->Get('Discussion')->ResultArray();
          $Discussions = Gdn_DataSet::Index($Discussions, array('DiscussionID'));
       }
       
       if (count($CommentIDs) > 0) {
-         $Comments = Gdn::SQL()->WhereIn('CommentID', $CommentIDs)->Get('Comment')->ResultArray();
+         $Comments = $Sql->WhereIn('CommentID', $CommentIDs)->Get('Comment')->ResultArray();
          $Comments = Gdn_DataSet::Index($Comments, array('CommentID'));
       }
       
@@ -291,11 +364,14 @@ class CategoryModel extends Gdn_Model {
    }
    
    /**
+    * Add UserCategory modifiers
     * 
+    * Update &$Categories in memory by applying modifiers from UserCategory for
+    * the currently logged-in user.
     * 
     * @since 2.0.18
     * @access public
-    * @param array $Categories
+    * @param array &$Categories
     * @param bool $AddUserCategory
     */
    public static function JoinUserData(&$Categories, $AddUserCategory = TRUE) {
@@ -321,6 +397,7 @@ class CategoryModel extends Gdn_Model {
          
          foreach ($IDs as $ID) {
             $Category = $Categories[$ID];
+            
             $DateMarkedRead = GetValue('DateMarkedRead', $Category);
             $Row = GetValue($ID, $UserData);
             if ($Row) {
@@ -352,7 +429,7 @@ class CategoryModel extends Gdn_Model {
                $Categories[$ID]['Read'] = FALSE;
             }
          }
-            
+         
       }
       
       // Add permissions.
@@ -651,10 +728,9 @@ class CategoryModel extends Gdn_Model {
    }
    
    public function GetFull($CategoryID = FALSE, $Permissions = FALSE) {
+      
+      // Get the current category list
       $Categories = self::Categories();
-      $Joined = self::JoinRecentPosts($Categories);
-      if ($Joined && Gdn::Cache()->ActiveEnabled())
-         Gdn::Cache()->Store(self::CACHE_KEY, $Categories);
       
       // Filter out the categories we aren't supposed to view.
       if ($CategoryID && !is_array($CategoryID))
@@ -1157,7 +1233,7 @@ class CategoryModel extends Gdn_Model {
    }
    
    /**
-    * Grab the categories from the cache.
+    * Grab and update the category cache
     * 
     * @since 2.0.18
     * @access public
@@ -1171,7 +1247,7 @@ class CategoryModel extends Gdn_Model {
       if (!$Categories)
          return;
       
-      if (!$ID) {
+      if (!$ID || !is_array($Categories)) {
          Gdn::Cache()->Remove(self::CACHE_KEY);
          return;
       }
@@ -1184,9 +1260,11 @@ class CategoryModel extends Gdn_Model {
       $Category = $Categories[$ID];
       $Category = array_merge($Category, $Data);
       $Categories[$ID] = $Category;
-      self::CalculateData($Categories);
-      Gdn::Cache()->Store(self::CACHE_KEY, $Categories, array(Gdn_Cache::FEATURE_EXPIRY => 600));
+      
       self::$Categories = $Categories;
+      unset($Categories);
+      self::BuildCache();
+      self::JoinUserData(self::$Categories, TRUE);
    }
    
    public function SetField($ID, $Property, $Value = FALSE) {
@@ -1279,13 +1357,12 @@ class CategoryModel extends Gdn_Model {
          
          // Set appropriate Last* columns.
          SetValue('LastTitle', $Category, GetValue('LastDiscussionTitle', $Category, NULL));
+         $LastDateInserted = GetValue('LastDateInserted', $Category, NULL);
          
          if (GetValue('LastCommentUserID', $Category) == NULL) {
             SetValue('LastCommentUserID', $Category, GetValue('LastDiscussionUserID', $Category, NULL));
             SetValue('DateLastComment', $Category, GetValue('DateLastDiscussion', $Category, NULL));
-            
             SetValue('LastUserID', $Category, GetValue('LastDiscussionUserID', $Category, NULL));
-            SetValue('LastDateInserted', $Category, GetValue('DateLastDiscussion', $Category, NULL));
             
             $LastDiscussion = ArrayTranslate($Category, array(
                 'LastDiscussionID' => 'DiscussionID', 
@@ -1293,19 +1370,25 @@ class CategoryModel extends Gdn_Model {
                 'LastTitle' => 'Name'));
             
             SetValue('LastUrl', $Category, DiscussionUrl($LastDiscussion).'#latest');
+            
+            if (is_null($LastDateInserted))
+               SetValue('LastDateInserted', $Category, GetValue('DateLastDiscussion', $Category, NULL));
          } else {
             $LastDiscussion = ArrayTranslate($Category, array(
-                'LastDiscussionID' => 'DiscussionID', 
-                'CategoryID' => 'CategoryID',
-                'LastTitle' => 'Name'));
+               'LastDiscussionID' => 'DiscussionID', 
+               'CategoryID' => 'CategoryID',
+               'LastTitle' => 'Name'
+            ));
             
             SetValue('LastUserID', $Category, GetValue('LastCommentUserID', $Category, NULL));
-            SetValue('LastDateInserted', $Category, GetValue('DateLastComment', $Category, NULL));
             SetValue('LastUrl', $Category, DiscussionUrl($LastDiscussion, FALSE).'#latest');
+            
+            if (is_null($LastDateInserted))
+               SetValue('LastDateInserted', $Category, GetValue('DateLastComment', $Category, NULL));
          }
          
+         $LastDateInserted = GetValue('LastDateInserted', $Category, NULL);
          if ($DateMarkedRead) {
-            $LastDateInserted = GetValue('LastDateInserted', $Category);
             if ($LastDateInserted)
                $Category->Read = Gdn_Format::ToTimestamp($DateMarkedRead) >= Gdn_Format::ToTimestamp($LastDateInserted);
             else
@@ -1323,32 +1406,4 @@ class CategoryModel extends Gdn_Model {
 		}
 	}
 
-   /**
-    * 
-    * 
-    * @since 2.0.18
-    * @access public
-    * @param array $Data Dataset.
-    */
-   protected static function CalculateData(&$Data) {
-		foreach ($Data as &$Category) {
-         $Category['CountAllDiscussions'] = $Category['CountDiscussions'];
-         $Category['CountAllComments'] = $Category['CountComments'];
-         $Category['Url'] = CategoryUrl($Category);
-         $Category['ChildIDs'] = array();
-		}
-      
-      $Keys = array_reverse(array_keys($Data));
-      foreach ($Keys as $Key) {
-         $Cat = $Data[$Key];
-         $ParentID = $Cat['ParentCategoryID'];
-
-         if (isset($Data[$ParentID]) && $ParentID != $Key) {
-            $Data[$ParentID]['CountAllDiscussions'] += $Cat['CountAllDiscussions'];
-            $Data[$ParentID]['CountAllComments'] += $Cat['CountAllComments'];
-            array_unshift($Data[$ParentID]['ChildIDs'], $Key);
-         }
-      }
-	}
-   
 }

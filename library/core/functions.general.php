@@ -617,7 +617,7 @@ if (!function_exists('Debug')) {
       
       $Debug = $Value;
       if ($Debug)
-         error_reporting(E_ALL);
+         error_reporting(E_ALL & ~E_STRICT);
       else
          error_reporting(E_ERROR | E_PARSE | E_CORE_ERROR | E_COMPILE_ERROR | E_USER_ERROR | E_RECOVERABLE_ERROR);
    }
@@ -1037,6 +1037,32 @@ function _FormatStringCallback($Match, $SetArgs = FALSE) {
             break;
          case 'urlencode':
             $Result = urlencode($Value);
+            break;
+         case 'gender':
+            // Format in the form of FieldName,gender,male,female,unknown
+            
+            if (is_array($Value) && count($Value) == 1)
+               $Value = array_shift($Value);
+            
+            $Gender = 'u';
+            
+            if (!is_array($Value)) {
+               $User = Gdn::UserModel()->GetID($Value);
+               if ($User)
+                  $Gender = $User->Gender;
+            }
+            
+            switch($Gender) {
+               case 'm':
+                  $Result = $SubFormat;
+                  break;
+               case 'f':
+                  $Result = $FormatArgs;
+                  break;
+               default:
+                  $Result = GetValue(4, $Parts);
+            }
+            
             break;
          case 'user':
          case 'you':

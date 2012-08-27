@@ -185,7 +185,7 @@ class CategoriesController extends VanillaController {
 			$this->SetData('AnnounceData', $AnnounceData, TRUE);
          $Wheres['d.CategoryID'] = $CategoryIDs;
          
-         $this->DiscussionData = $this->SetData('Discussions', $DiscussionModel->Get($Offset, $Limit, $Wheres));
+         $this->DiscussionData = $this->SetData('Discussions', $DiscussionModel->GetWhere($Wheres, $Offset, $Limit));
 	
 			// Build a pager
 			$PagerFactory = new Gdn_PagerFactory();
@@ -248,12 +248,6 @@ class CategoriesController extends VanillaController {
       // Get category data
       $CategoryModel = new CategoryModel();
       $this->CategoryModel->Watching = !Gdn::Session()->GetPreference('ShowAllCategories');
-      
-//      $Categories = CategoryModel::Categories();
-//      CategoryModel::JoinRecentPosts($Categories);
-//      $this->SetData('Categories2', $Categories);
-      
-      
       
       $Categories = $this->CategoryModel->GetFull()->ResultArray();
 		$this->SetData('Categories', $Categories);
