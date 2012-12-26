@@ -309,12 +309,14 @@ class EntryController extends Gdn_Controller {
          return $this->Render('ConnectError');
       }
       
-      if (!$this->Form->GetFormValue('Email') || $this->Form->GetFormValue('EmailVisible')) {
-         $this->Form->SetFormValue('EmailVisible', TRUE);
-         $this->Form->AddHidden('EmailVisible', TRUE);
-         
-         if ($IsPostBack) {
-            $this->Form->SetFormValue('Email', GetValue('Email', $CurrentData));
+      if (!UserModel::NoEmail()) {
+         if (!$this->Form->GetFormValue('Email') || $this->Form->GetFormValue('EmailVisible')) {
+            $this->Form->SetFormValue('EmailVisible', TRUE);
+            $this->Form->AddHidden('EmailVisible', TRUE);
+
+            if ($IsPostBack) {
+               $this->Form->SetFormValue('Email', GetValue('Email', $CurrentData));
+            }
          }
       }
 
@@ -342,11 +344,11 @@ class EntryController extends Gdn_Controller {
       $UserID = GetValue('UserID', $Auth);
       
       // Check to synchronise roles upon connecting.
-      if (C('Garden.SSO.SynchRoles')) {
+      if (($this->Data('Trusted') || C('Garden.SSO.SynchRoles')) && $this->Form->GetFormValue('Roles', NULL) !== NULL) {
          $SaveRoles = TRUE;
          
          // Translate the role names to IDs.
-         $Roles = $this->Form->GetFormValue('Roles');
+         $Roles = $this->Form->GetFormValue('Roles', NULL);
          $Roles = RoleModel::GetByName($Roles);
          $RoleIDs = array_keys($Roles);
          
@@ -385,6 +387,7 @@ class EntryController extends Gdn_Controller {
 
          // Sign the user in.
          Gdn::Session()->Start($UserID, TRUE, TRUE);
+         Gdn::UserModel()->FireEvent('AfterSignIn');
 //         $this->_SetRedirect(TRUE);
          $this->_SetRedirect($this->Request->Get('display') == 'popup');
       } elseif ($this->Form->GetFormValue('Name') || $this->Form->GetFormValue('Email')) {
@@ -437,6 +440,7 @@ class EntryController extends Gdn_Controller {
                   
                   // Sign the user in.
                   Gdn::Session()->Start($UserID, TRUE, TRUE);
+                  Gdn::UserModel()->FireEvent('AfterSignIn');
          //         $this->_SetRedirect(TRUE);
                   $this->_SetRedirect($this->Request->Get('display') == 'popup');
                   $this->Render();
@@ -479,8 +483,13 @@ class EntryController extends Gdn_Controller {
          }
 
          $this->SetData('ExistingUsers', $ExistingUsers);
+         
+         if (UserModel::NoEmail())
+            $EmailValid = TRUE;
+         else
+            $EmailValid = ValidateRequired($this->Form->GetFormValue('Email'));
 
-         if ($this->Form->GetFormValue('Name') && ValidateRequired($this->Form->GetFormValue('Email')) && (!is_array($ExistingUsers) || count($ExistingUsers) == 0)) {
+         if ($this->Form->GetFormValue('Name') && $EmailValid && (!is_array($ExistingUsers) || count($ExistingUsers) == 0)) {
             // There is no existing user with the suggested name so we can just create the user.
             $User = $this->Form->FormValues();
             $User['Password'] = RandomString(50); // some password is required
@@ -505,6 +514,7 @@ class EntryController extends Gdn_Controller {
                $this->Form->SetFormValue('UserID', $UserID);
 
                Gdn::Session()->Start($UserID, TRUE, TRUE);
+               Gdn::UserModel()->FireEvent('AfterSignIn');
 
                // Send the welcome email.
                if (C('Garden.Registration.SendConnectEmail', TRUE)) {
@@ -607,6 +617,7 @@ class EntryController extends Gdn_Controller {
 
             // Sign the appropriate user in.
             Gdn::Session()->Start($this->Form->GetFormValue('UserID', TRUE, TRUE));
+            Gdn::UserModel()->FireEvent('AfterSignIn');
             $this->_SetRedirect(TRUE);
          }
       }
@@ -684,7 +695,7 @@ class EntryController extends Gdn_Controller {
     * @param string $TransientKey (default: "")
     */
    public function SignOut($TransientKey = "") {
-      if (Gdn::Session()->ValidateTransientKey($TransientKey) || $this->Form->AuthenticatedPostBack()) {
+      if (Gdn::Session()->ValidateTransientKey($TransientKey) || $this->Form->IsPostBack()) {
          $User = Gdn::Session()->User;
          
          $this->EventArguments['SignoutUser'] = $User;
@@ -731,7 +742,7 @@ class EntryController extends Gdn_Controller {
       $this->FireEvent('SignIn');
 
       if ($this->Form->IsPostBack()) {
-         $this->Form->ValidateRule('Email', 'ValidateRequired', sprintf(T('%s is required.'), T('Email/Username')));
+         $this->Form->ValidateRule('Email', 'ValidateRequired', sprintf(T('%s is required.'), T(UserModel::SigninLabelCode())));
          $this->Form->ValidateRule('Password', 'ValidateRequired');
 
          // Check the user.
@@ -742,7 +753,7 @@ class EntryController extends Gdn_Controller {
                $User = Gdn::UserModel()->GetByUsername($Email);
 
             if (!$User) {
-               $this->Form->AddError('User not found.');
+               $this->Form->AddError('@'.sprintf(T('User not found.'), strtolower(T(UserModel::SigninLabelCode()))));
             } else {
                $ClientHour = $this->Form->GetFormValue('ClientHour');
                $HourOffset = Gdn_Format::ToTimestamp($ClientHour) - time();
@@ -1070,7 +1081,9 @@ class EntryController extends Gdn_Controller {
          
       $this->Form->AddHidden('ClientHour', date('Y-m-d H:00')); // Use the server's current hour as a default
       $this->Form->AddHidden('Target', $this->Target());
-
+      
+      $this->SetData('NoEmail', UserModel::NoEmail());
+      
       $RegistrationMethod = $this->_RegistrationView();
       $this->View = $RegistrationMethod;
       $this->$RegistrationMethod($InvitationCode);
@@ -1347,6 +1360,8 @@ class EntryController extends Gdn_Controller {
     * @since 2.1
     */
    public function RegisterThanks() {
+      $this->CssClass = 'SplashMessage NoPanel';
+      $this->SetData('_NoMessages', TRUE);
       $this->SetData('Title', T('Thank You!'));
       $this->Render();
    }
@@ -1358,7 +1373,7 @@ class EntryController extends Gdn_Controller {
     * @since 2.0.0
     */
    public function PasswordRequest() {
-      Gdn::Locale()->SetTranslation('Email', T('Email/Username'));
+      Gdn::Locale()->SetTranslation('Email', T(UserModel::SigninLabelCode()));
       if ($this->Form->IsPostBack() === TRUE) {
          $this->Form->ValidateRule('Email', 'ValidateRequired');
 
@@ -1366,7 +1381,7 @@ class EntryController extends Gdn_Controller {
             try {
                $Email = $this->Form->GetFormValue('Email');
                if (!$this->UserModel->PasswordRequest($Email)) {
-                  $this->Form->AddError("Couldn't find an account associated with that email/username.");
+                  $this->Form->SetValidationResults($this->UserModel->ValidationResults());
                }
             } catch (Exception $ex) {
                $this->Form->AddError($ex->getMessage());

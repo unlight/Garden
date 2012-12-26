@@ -238,7 +238,7 @@ class Gdn_Validation {
       // Make sure that $FieldName is in the validation fields collection
       $this->ValidationFields();
       
-      if (!array_key_exists($FieldName, $this->_ValidationFields))
+      if (!array_key_exists($FieldName, $this->_ValidationFields)) //  && $RuleName == 'Required'
          $this->_ValidationFields[$FieldName] = '';
          
       $this->_ApplyRule($FieldName, $RuleName, $CustomError);
@@ -288,7 +288,7 @@ class Gdn_Validation {
          $this->_FieldRules[$FieldName] = array_unique(array_merge($ExistingRules, $RuleName));
       }
    }
-
+   
 
    /**
     * Allows the explicit definition of a schema to use
@@ -493,7 +493,21 @@ class Gdn_Validation {
          return sprintf('Validation does not exist: %s.', $RuleName);
       }
    }
-
+   
+   public function UnapplyRule($FieldName, $RuleName = FALSE) {
+      if ($RuleName) {
+         if (isset($this->_FieldRules[$FieldName])) {
+            $Index = array_search($RuleName, $this->_FieldRules[$FieldName]);
+            
+            if ($Index !== FALSE)
+               unset($this->_FieldRules[$FieldName][$Index]);
+         }
+      } else {
+         unset($this->_FieldRules[$FieldName]);
+         unset($this->_ValidationFields[$FieldName]);
+      }
+      
+   }
 
    /**
     * Examines the posted fields, defines $this->_ValidationFields, and
@@ -518,6 +532,7 @@ class Gdn_Validation {
       if ($HoneypotContents != '')
          $this->AddValidationResult($HoneypotName, "You've filled our honeypot! We use honeypots to help prevent spam. If you're  not a spammer or a bot, you should contact the application administrator for help.");
 
+      
       // Loop through the fields that should be validated
       foreach($this->_ValidationFields as $FieldName => $FieldValue) {
          // If this field has rules to be enforced...
@@ -621,7 +636,7 @@ class Gdn_Validation {
          }
       }
       
-      $Result = implode('. ', $Errors);
+      $Result = implode('. ', $Errors).'.';
       return $Result;
    }
 }

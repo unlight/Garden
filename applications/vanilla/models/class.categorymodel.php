@@ -146,8 +146,11 @@ class CategoryModel extends Gdn_Model {
 		foreach ($Data as &$Category) {
          $Category['CountAllDiscussions'] = $Category['CountDiscussions'];
          $Category['CountAllComments'] = $Category['CountComments'];
-         $Category['Url'] = CategoryUrl($Category);
+         $Category['Url'] = CategoryUrl($Category, FALSE, '//');
          $Category['ChildIDs'] = array();
+         
+         if (!GetValue('CssClass', $Category))
+            $Category['CssClass'] = 'Category-'.$Category['UrlCode'];
 		}
       
       $Keys = array_reverse(array_keys($Data));
@@ -345,7 +348,7 @@ class CategoryModel extends Gdn_Model {
             $Row['LastUserID'] = $Discussion['InsertUserID'];
             $Row['LastDateInserted'] = $Discussion['DateInserted'];
             $NameUrl = Gdn_Format::Text($Discussion['Name'], TRUE);
-            $Row['LastUrl'] = DiscussionUrl($Discussion).'#latest';
+            $Row['LastUrl'] = DiscussionUrl($Discussion, FALSE, '//').'#latest';
          }
          $Comment = GetValue($Row['LastCommentID'], $Comments);
          if ($Comment) {
@@ -508,6 +511,19 @@ class CategoryModel extends Gdn_Model {
                ->Update('Category')->Set('CountDiscussions', $Count)
                ->Where('CategoryID', $ReplacementCategoryID)
                ->Put();
+            
+            // Update tags
+            $this->SQL
+               ->Update('Tag')
+               ->Set('CategoryID', $ReplacementCategoryID)
+               ->Where('CategoryID', $Category->CategoryID)
+               ->Put();
+            
+            $this->SQL
+               ->Update('TagDiscussion')
+               ->Set('CategoryID', $ReplacementCategoryID)
+               ->Where('CategoryID', $Category->CategoryID)
+               ->Put();
          } else {
             // Delete comments in this category
             // Resorted to Query because of incompatibility of aliasing in MySQL 5.5 -mlr 2011-12-13
@@ -527,6 +543,10 @@ class CategoryModel extends Gdn_Model {
                ->Where('PermissionCategoryID', $Category->CategoryID)
                ->Where('CategoryID <>', $Category->CategoryID)
                ->Put();
+            
+            // Delete tags
+            $this->SQL->Delete('Tag', array('CategoryID' => $Category->CategoryID));
+            $this->SQL->Delete('TagDiscussion', array('CategoryID' => $Category->CategoryID));
          }
          
          // Delete the category
@@ -757,6 +777,67 @@ class CategoryModel extends Gdn_Model {
          elseif (!$Categories[$ID][$Permissions])
             unset($Categories[$ID]);
          elseif (is_array($CategoryID) && !in_array($ID, $CategoryID))
+            unset($Categories[$ID]);
+      }
+      
+      Gdn::UserModel()->JoinUsers($Categories, array('LastUserID'));
+      
+      $Result = new Gdn_DataSet($Categories, DATASET_TYPE_ARRAY);
+      $Result->DatasetType(DATASET_TYPE_OBJECT);
+      return $Result;
+   }
+   
+   /**
+    * Get a list of categories, considering several filters
+    * 
+    * @param array $RestrictIDs Optional list of category ids to mask the dataset
+    * @param string $Permissions Optional permission to require. Defaults to Vanilla.Discussions.View.
+    * @param array $ExcludeWhere Exclude categories with any of these flags
+    * @return \Gdn_DataSet
+    */
+   public function GetFiltered($RestrictIDs = FALSE, $Permissions = FALSE, $ExcludeWhere = FALSE) {
+      
+      // Get the current category list
+      $Categories = self::Categories();
+      
+      // Filter out the categories we aren't supposed to view.
+      if ($RestrictIDs && !is_array($RestrictIDs))
+         $RestrictIDs = array($RestrictIDs);
+      elseif ($this->Watching)
+         $RestrictIDs = self::CategoryWatch();
+      
+      switch ($Permissions) {
+         case 'Vanilla.Discussions.Add':
+            $Permissions = 'PermsDiscussionsAdd';
+            break;
+         case 'Vanilla.Disussions.Edit':
+            $Permissions = 'PermsDiscussionsEdit';
+            break;
+         default:
+            $Permissions = 'PermsDiscussionsView';
+            break;
+      }
+      
+      $IDs = array_keys($Categories);
+      foreach ($IDs as $ID) {
+         
+         // Exclude the root category
+         if ($ID < 0)
+            unset($Categories[$ID]);
+         
+         // No categories where we don't have permission
+         elseif (!$Categories[$ID][$Permissions])
+            unset($Categories[$ID]);
+         
+         // No categories whose filter fields match the provided filter values
+         elseif (is_array($ExcludeWhere)) {
+            foreach ($ExcludeWhere as $Filter => $FilterValue)
+               if (GetValue($Filter, $Categories[$ID], FALSE) == $FilterValue)
+                  unset($Categories[$ID]);
+         }
+         
+         // No categories that are otherwise filtered out
+         elseif (is_array($RestrictIDs) && !in_array($ID, $RestrictIDs))
             unset($Categories[$ID]);
       }
       
@@ -1369,7 +1450,7 @@ class CategoryModel extends Gdn_Model {
                 'CategoryID' => 'CategoryID',
                 'LastTitle' => 'Name'));
             
-            SetValue('LastUrl', $Category, DiscussionUrl($LastDiscussion).'#latest');
+            SetValue('LastUrl', $Category, DiscussionUrl($LastDiscussion, FALSE, '//').'#latest');
             
             if (is_null($LastDateInserted))
                SetValue('LastDateInserted', $Category, GetValue('DateLastDiscussion', $Category, NULL));
@@ -1381,7 +1462,7 @@ class CategoryModel extends Gdn_Model {
             ));
             
             SetValue('LastUserID', $Category, GetValue('LastCommentUserID', $Category, NULL));
-            SetValue('LastUrl', $Category, DiscussionUrl($LastDiscussion, FALSE).'#latest');
+            SetValue('LastUrl', $Category, DiscussionUrl($LastDiscussion, FALSE, '//').'#latest');
             
             if (is_null($LastDateInserted))
                SetValue('LastDateInserted', $Category, GetValue('DateLastComment', $Category, NULL));

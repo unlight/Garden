@@ -75,7 +75,7 @@ class NotificationsController extends Gdn_Controller {
           'Notified' => ActivityModel::SENT_PENDING);
       
       // If we're in the middle of a visit only get very recent notifications.
-      $Where['DateInserted >'] = Gdn_Format::ToDateTime(strtotime('-5 minutes'));
+      $Where['DateUpdated >'] = Gdn_Format::ToDateTime(strtotime('-5 minutes'));
       
       $Activities = $ActivityModel->GetWhere($Where, 0, 5)->ResultArray();
       
@@ -91,12 +91,14 @@ class NotificationsController extends Gdn_Controller {
          else
             $UserPhoto = '';
          $Excerpt = Gdn_Format::Display($Activity['Story']);
+         $ActivityClass = ' Activity-'.$Activity['ActivityType'];
+         
          
          $Sender->InformMessage(
             $UserPhoto
             .Wrap($Activity['Headline'], 'div', array('class' => 'Title'))
             .Wrap($Excerpt, 'div', array('class' => 'Excerpt')),
-            'Dismissable AutoDismiss'.($UserPhoto == '' ? '' : ' HasIcon')
+            'Dismissable AutoDismiss'.$ActivityClass.($UserPhoto == '' ? '' : ' HasIcon')
          );
       }
    }

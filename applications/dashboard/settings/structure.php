@@ -90,6 +90,7 @@ $Construct
    ->Column('Verified', 'tinyint(1)', '0') // user if verified as a non-spammer
    ->Column('Banned', 'tinyint(1)', '0') // 1 means banned, otherwise not banned
    ->Column('Deleted', 'tinyint(1)', '0')
+   ->Column('Points', 'int', 0)
    ->Set($Explicit, $Drop);
 
 // Make sure the system user is okay.
@@ -134,6 +135,15 @@ $Construct->Table('UserMeta')
    ->Column('Value', 'text', TRUE)
    ->Set($Explicit, $Drop);
 
+// User Points Table   
+$Construct->Table('UserPoints')
+   ->Column('SlotType', array('d', 'w', 'm', 'y', 'a'), FALSE, 'primary')
+   ->Column('TimeSlot', 'datetime', FALSE, 'primary')
+   ->Column('Source', 'varchar(10)', 'Total', 'primary')
+   ->Column('UserID', 'int', FALSE, 'primary')
+   ->Column('Points', 'int', 0)
+   ->Set($Explicit, $Drop);
+
 // Create the authentication table.
 $Construct->Table('UserAuthentication')
 	->Column('ForeignUserKey', 'varchar(255)', FALSE, 'primary')
@@ -146,7 +156,7 @@ $Construct->Table('UserAuthenticationProvider')
    ->Column('AuthenticationSchemeAlias', 'varchar(32)', FALSE)
    ->Column('Name', 'varchar(50)', TRUE)
    ->Column('URL', 'varchar(255)', TRUE)
-   ->Column('AssociationSecret', 'text', FALSE)
+   ->Column('AssociationSecret', 'text', TRUE)
    ->Column('AssociationHashMethod', 'varchar(20)', TRUE)
    ->Column('AuthenticateUrl', 'varchar(255)', TRUE)
    ->Column('RegisterUrl', 'varchar(255)', TRUE)
@@ -232,6 +242,7 @@ $PermissionModel->Define(array(
    'Garden.Activity.View' => 1,
    'Garden.Profiles.View' => 1,
    'Garden.Profiles.Edit' => 'Garden.SignIn.Allow',
+   'Garden.Curation.Manage' => 'Garden.Moderation.Manage',
    'Garden.Moderation.Manage',
    'Garden.AdvancedNotifications.Allow'
    ));
@@ -281,6 +292,7 @@ if (!$PermissionTableExists) {
       'Role' => 'Moderator',
       'Garden.SignIn.Allow' => 1,
       'Garden.Activity.View' => 1,
+      'Garden.Curation.Manage' => 1,
       'Garden.Moderation.Manage' => 1,
       'Garden.Profiles.View' => 1,
       'Garden.Profiles.Edit' => 1,
@@ -308,22 +320,24 @@ if (!$PermissionTableExists) {
       'Garden.Profiles.View' => 1,
       'Garden.Profiles.Edit' => 1,
       'Garden.AdvancedNotifications.Allow' => 1,
-      'Garden.Email.View' => 1
+      'Garden.Email.View' => 1,
+      'Garden.Curation.Manage' => 1,
+      'Garden.Moderation.Manage' => 1
       ));
 }
 $PermissionModel->ClearPermissions();
 
-// Photo Table
-$Construct->Table('Photo');
-
-$PhotoTableExists = $Construct->TableExists('Photo');
-
-$Construct
-	->PrimaryKey('PhotoID')
-   ->Column('Name', 'varchar(255)')
-   ->Column('InsertUserID', 'int', TRUE, 'key')
-   ->Column('DateInserted', 'datetime')
-   ->Set($Explicit, $Drop);
+//// Photo Table
+//$Construct->Table('Photo');
+//
+//$PhotoTableExists = $Construct->TableExists('Photo');
+//
+//$Construct
+//	->PrimaryKey('PhotoID')
+//   ->Column('Name', 'varchar(255)')
+//   ->Column('InsertUserID', 'int', TRUE, 'key')
+//   ->Column('DateInserted', 'datetime')
+//   ->Set($Explicit, $Drop);
 
 // Invitation Table
 $Construct->Table('Invitation')
@@ -581,12 +595,13 @@ $Construct->Table('Tag')
    ->Column('Type', 'varchar(10)', TRUE, 'index')
    ->Column('InsertUserID', 'int', TRUE, 'key')
    ->Column('DateInserted', 'datetime')
+   ->Column('CategoryID', 'int', -1, 'unique')
    ->Engine('InnoDB')
    ->Set($Explicit, $Drop);
 
 $Construct->Table('Log')
    ->PrimaryKey('LogID')
-   ->Column('Operation', array('Delete', 'Edit', 'Spam', 'Moderate', 'Ban', 'Error'))
+   ->Column('Operation', array('Delete', 'Edit', 'Spam', 'Moderate', 'Pending', 'Ban', 'Error'))
    ->Column('RecordType', array('Discussion', 'Comment', 'User', 'Registration', 'Activity', 'ActivityComment', 'Configuration'), FALSE, 'index')
    ->Column('TransactionLogID', 'int', NULL)
    ->Column('RecordID', 'int', NULL, 'index')
@@ -599,6 +614,7 @@ $Construct->Table('Log')
    ->Column('OtherUserIDs', 'varchar(255)', NULL)
    ->Column('DateUpdated', 'datetime', NULL)
    ->Column('ParentRecordID', 'int', NULL, 'index')
+   ->Column('CategoryID', 'int', NULL, 'key')
    ->Column('Data', 'mediumtext', NULL) // the data from the record.
    ->Column('CountGroup', 'int', NULL)
    ->Engine('InnoDB')

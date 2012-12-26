@@ -1,5 +1,5 @@
 jQuery(document).ready(function($){
-   statsUrl = gdn.definition('VanillaStatsUrl', 'http://analytics.vanillaforums.com');
+   statsUrl = gdn.definition('VanillaStatsUrl', '//analytics.vanillaforums.com');
    
    frame = function() {
       var frame = document.getElementById('VanillaStatsGraph');
@@ -39,7 +39,7 @@ jQuery(document).ready(function($){
       var dateRange = $('input.DateRange').val();
       
       $.ajax({
-         url: gdn.url('/dashboard/settings/dashboardsummaries&DeliveryType=VIEW&Range='+range+'&DateRange='+dateRange),
+         url: gdn.url('/index.php?p=/dashboard/settings/dashboardsummaries&DeliveryType=VIEW&Range='+range+'&DateRange='+dateRange),
          success: function(data) {
             $('div.DashboardSummaries').html(data);
          },

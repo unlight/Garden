@@ -1,24 +1,14 @@
 <?php if (!defined('APPLICATION')) exit();
-/*
-Copyright 2008, 2009 Vanilla Forums Inc.
-This file is part of Garden.
-Garden is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
-Garden is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
-You should have received a copy of the GNU General Public License along with Garden.  If not, see <http://www.gnu.org/licenses/>.
-Contact Vanilla Forums Inc. at support [at] vanillaforums [dot] com
-*/
-/**
- * Post Controller
- *
- * @package Vanilla
- */
- 
+
 /**
  * Handles posting and editing comments, discussions, and drafts.
  *
+ * @copyright Copyright 2008, 2009 Vanilla Forums Inc.
+ * @license http://www.opensource.org/licenses/gpl-2.0.php GPLv2
  * @since 2.0.0
  * @package Vanilla
  */
+
 class PostController extends VanillaController {
    /**
     * @var Gdn_Form
@@ -72,11 +62,11 @@ class PostController extends VanillaController {
     * 
     * @param int $CategoryID Unique ID of the category to add the discussion to.
     */
-   public function Discussion($CategoryID = '') {
+   public function Discussion($CategoryUrlCode = '') {
       // Override CategoryID if categories are disabled
       $UseCategories = $this->ShowCategorySelector = (bool)C('Vanilla.Categories.Use');
       if (!$UseCategories) 
-         $CategoryID = 0;
+         $CategoryUrlCode = '';
          
       // Setup head
       $this->AddJsFile('jquery.autogrow.js');
@@ -88,12 +78,21 @@ class PostController extends VanillaController {
       // Set discussion, draft, and category data
       $DiscussionID = isset($this->Discussion) ? $this->Discussion->DiscussionID : '';
       $DraftID = isset($this->Draft) ? $this->Draft->DraftID : 0;
-      $this->CategoryID = isset($this->Discussion) ? $this->Discussion->CategoryID : $CategoryID;
-      $Category = CategoryModel::Categories($this->CategoryID);
+      $Category = FALSE;
+      if (isset($this->Discussion)) {
+         $this->CategoryID = $this->Discussion->CategoryID;
+         $Category = CategoryModel::Categories($this->CategoryID);
+      } else if ($CategoryUrlCode != '') {
+         $CategoryModel = new CategoryModel();
+         $Category = $CategoryModel->GetByCode($CategoryUrlCode);
+         $this->CategoryID = $Category->CategoryID;
+      }
       if ($Category)
          $this->Category = (object)$Category;
-      else
+      else {
+         $this->CategoryID = 0;
          $this->Category = NULL;
+      }
 
       $CategoryData = $UseCategories ? CategoryModel::Categories() : FALSE;
       
@@ -183,8 +182,8 @@ class PostController extends VanillaController {
                      if ($DraftID > 0)
                      $this->DraftModel->Delete($DraftID);
                   }
-                  if ($DiscussionID == SPAM) {
-                     $this->StatusMessage = T('Your post has been flagged for moderation.');
+                  if ($DiscussionID == SPAM || $DiscussionID == UNAPPROVED) {
+                  	$this->StatusMessage = T('DiscussionRequiresApprovalStatus', 'Your discussion will appear after it is approved.');
                      $this->Render('Spam');
                      return;
                   }
@@ -337,24 +336,35 @@ class PostController extends VanillaController {
          $this->Form->AddHidden('vanilla_category_id', $vanilla_category_id);
          
          $PageInfo = FetchPageInfo($vanilla_url);
-         $Title = GetValue('Title', $PageInfo, '');
-         if ($Title == '')
-            $Title = T('Undefined discussion subject.');
+         
+         if (!($Title = $this->Form->GetFormValue('Name'))) {
+            $Title = GetValue('Title', $PageInfo, '');
+            if ($Title == '')
+               $Title = T('Undefined discussion subject.');
+         }
+         
          $Description = GetValue('Description', $PageInfo, '');
          $Images = GetValue('Images', $PageInfo, array());
          $LinkText = T('EmbededDiscussionLinkText', 'Read the full story here');
-         $Body = FormatString('
-         <div class="EmbeddedContent">{Image}<strong>{Title}</strong>
-            <p>{Excerpt}</p>
-            <p><a href="{Url}">{LinkText}</a></p>
-            <div class="ClearFix"></div>
-         </div>', array(
-             'Title' => $Title,
-             'Excerpt' => $Description,
-             'Image' => (count($Images) > 0 ? Img(GetValue(0, $Images), array('class' => 'LeftAlign')) : ''),
-             'Url' => $vanilla_url,
-             'LinkText' => $LinkText
-         ));
+         
+         if (!$Description && count($Images) == 0) {
+            $Body = FormatString('<p><a href="{Url}">{LinkText}</a></p>', 
+               array('Url' => $vanilla_url, 'LinkText' => $LinkText));
+         } else {
+            $Body = FormatString('
+            <div class="EmbeddedContent">{Image}<strong>{Title}</strong>
+               <p>{Excerpt}</p>
+               <p><a href="{Url}">{LinkText}</a></p>
+               <div class="ClearFix"></div>
+            </div>', array(
+                'Title' => $Title,
+                'Excerpt' => $Description,
+                'Image' => (count($Images) > 0 ? Img(GetValue(0, $Images), array('class' => 'LeftAlign')) : ''),
+                'Url' => $vanilla_url,
+                'LinkText' => $LinkText
+            ));
+         }
+         
          if ($Body == '')
             $Body = $vanilla_url;
          if ($Body == '')
@@ -490,6 +500,19 @@ class PostController extends VanillaController {
             $this->Form->AddHidden('DraftID', $DraftID, TRUE);
             $this->Form->SetValidationResults($this->DraftModel->ValidationResults());
          } else if (!$Preview) {
+            // Fix an undefined title if we can.
+            if ($this->Form->GetFormValue('Name') && GetValue('Name', $Discussion) == T('Undefined discussion subject.')) {
+               $Set = array('Name' => $this->Form->GetFormValue('Name'));
+               
+               if (isset($vanilla_url) && $vanilla_url && strpos(GetValue('Body', $Discussion), T('Undefined discussion subject.')) !== FALSE) {
+                  $LinkText = T('EmbededDiscussionLinkText', 'Read the full story here');
+                  $Set['Body'] = FormatString('<p><a href="{Url}">{LinkText}</a></p>', 
+                     array('Url' => $vanilla_url, 'LinkText' => $LinkText));
+               }
+               
+               $this->DiscussionModel->SetField(GetValue('DiscussionID', $Discussion), $Set);
+            }
+            
             $Inserted = !$CommentID;
             $CommentID = $this->CommentModel->Save($FormValues);
 
@@ -507,8 +530,8 @@ class PostController extends VanillaController {
                $this->EventArguments['Discussion'] = $Discussion;
                $this->EventArguments['Comment'] = $Comment;
                $this->FireEvent('AfterCommentSave');
-            } elseif ($CommentID === SPAM) {
-               $this->StatusMessage = T('Your post has been flagged for moderation.');
+            } elseif ($CommentID === SPAM || $CommentID === UNAPPROVED) {
+               $this->StatusMessage = T('CommentRequiresApprovalStatus', 'Your comment will appear after it is approved.');
             }
             
             $this->Form->SetValidationResults($this->CommentModel->ValidationResults());

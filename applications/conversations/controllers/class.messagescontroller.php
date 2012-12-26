@@ -187,6 +187,7 @@ class MessagesController extends ConversationsController {
          $this->SetData('_PagerUrl', 'messages/all/{Page}');
       $this->SetData('_Page', $Page);
       $this->SetData('_Limit', $Limit);
+      $this->SetData('_CurrentRecords', count($Conversations->ResultArray()));
       
       // Deliver json data if necessary
       if ($this->_DeliveryType != DELIVERY_TYPE_ALL && $this->_DeliveryMethod == DELIVERY_METHOD_XHTML) {
@@ -207,18 +208,22 @@ class MessagesController extends ConversationsController {
     * 
     * @param int $ConversationID Unique ID of conversation to clear.
     */
-   public function Clear($ConversationID = FALSE) {
+   public function Clear($ConversationID = FALSE, $TransientKey = '') {
       $Session = Gdn::Session();
       
       // Yes/No response
       $this->_DeliveryType = DELIVERY_TYPE_BOOL;
       
-      // Clear it
-      if (is_numeric($ConversationID) && $ConversationID > 0 && $Session->IsValid())
-         $this->ConversationModel->Clear($ConversationID, $Session->UserID);
+      $ValidID = (is_numeric($ConversationID) && $ConversationID > 0);
+      $ValidSession = ($Session->UserID > 0 && $Session->ValidateTransientKey($TransientKey));
       
-      $this->InformMessage(T('The conversation has been cleared.'));
-      $this->RedirectUrl = Url('/messages/all');
+      if ($ValidID && $ValidSession) {
+         // Clear it
+         $this->ConversationModel->Clear($ConversationID, $Session->UserID);
+         $this->InformMessage(T('The conversation has been cleared.'));
+         $this->RedirectUrl = Url('/messages/all');
+      }
+      
       $this->Render();
    }
    
@@ -380,10 +385,13 @@ class MessagesController extends ConversationsController {
          Gdn::Session()->UserID,
          0,
          5
-      );
+      )->ResultArray();
+      
+      // Last message user data
+      Gdn::UserModel()->JoinUsers($Conversations, array('LastInsertUserID'));
       
       // Join in the participants.
-      $this->SetData('Conversations', $Conversations->ResultArray());
+      $this->SetData('Conversations', $Conversations);
       $this->Render();
    }
    

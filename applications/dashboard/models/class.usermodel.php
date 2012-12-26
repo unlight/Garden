@@ -9,7 +9,7 @@ Contact Vanilla Forums Inc. at support [at] vanillaforums [dot] com
 */
 
 class UserModel extends Gdn_Model {
-   const DEFAULT_CONFIRM_EMAIL = 'You need to confirm your email address before you can continue. Please confirm your email address by clicking on the following link: {/entry/emailconfirm,url,domain}/{User.UserID,rawurlencode}/{EmailKey,rawurlencode}';
+   const DEFAULT_CONFIRM_EMAIL = 'You need to confirm your email address before you can continue. Please confirm your email address by clicking on the following link: {/entry/emailconfirm,exurl,domain}/{User.UserID,rawurlencode}/{EmailKey,rawurlencode}';
    const USERID_KEY = 'user.{UserID}';
    const USERNAME_KEY = 'user.{Name}.name';
    const USERROLES_KEY = 'user.{UserID}.roles';
@@ -85,10 +85,10 @@ class UserModel extends Gdn_Model {
    }
    
    /**
-    * Checks the currently authenticated user's permissions for the specified
-    * permission. Returns a boolean value indicating if the action is
-    * permitted.
+    * Checks the specified user's for the given permission. Returns a boolean 
+    * value indicating if the action is permitted.
     *
+    * @param mixed $User The user to check
     * @param mixed $Permission The permission (or array of permissions) to check.
     * @param int $JunctionID The JunctionID associated with $Permission (ie. A discussion category identifier).
 	 * @return boolean
@@ -118,6 +118,23 @@ class UserModel extends Gdn_Model {
       
       $Result = in_array($Permission, $Permissions) || array_key_exists($Permission, $Permissions);
       return $Result;
+   }
+
+   /**
+    * Whether or not the application requires email confirmation.
+    * 
+    * @return bool
+    */
+   public static function RequireConfirmEmail() {
+      return C('Garden.Registration.ConfirmEmail') && !self::NoEmail();
+   }
+   
+   /**
+    * Whether or not users have email addresses.
+    * @return bool
+    */
+   public static function NoEmail() {
+      return C('Garden.Registration.NoEmail');
    }
    
    /**
@@ -370,8 +387,10 @@ class UserModel extends Gdn_Model {
          
          // Check to auto-connect based on email address.
          if (C('Garden.SSO.AutoConnect', C('Garden.Registration.AutoConnect')) && isset($UserData['Email'])) {
-            $User = (array)$this->GetByEmail($UserData['Email']);
+            $User = $this->GetByEmail($UserData['Email']);
+            Trace($User, "Autoconnect User");
             if ($User) {
+               $User = (array)$User;
                // Save the user.
                $this->SynchUser($User, $UserData);
                $UserID = $User['UserID'];
@@ -442,7 +461,7 @@ class UserModel extends Gdn_Model {
       $this->FireEvent('BeforeInsertUser');
       
       // Massage the roles for email confirmation.
-      if (C('Garden.Registration.ConfirmEmail') && !GetValue('NoConfirmEmail', $Options)) {
+      if (self::RequireConfirmEmail() && !GetValue('NoConfirmEmail', $Options)) {
          $ConfirmRoleID = C('Garden.Registration.ConfirmEmailRole');
          if ($ConfirmRoleID) {
             TouchValue('Attributes', $Fields, array());
@@ -463,6 +482,10 @@ class UserModel extends Gdn_Model {
          $Fields['Password'] = $PasswordHash->HashPassword($Fields['Password']);
          $Fields['HashMethod'] = 'Vanilla';
       }
+      
+      // Certain configurations can allow blank email addresses.
+      if (GetValue('Email', $Fields, NULL) === NULL)
+         $Fields['Email'] = '';
 
       $Roles = GetValue('Roles', $Fields);
       unset($Fields['Roles']);
@@ -530,7 +553,7 @@ class UserModel extends Gdn_Model {
                      if (!$Value) {
                         if ($UserPhotoDefaultUrl)
                            $Value = UserPhotoDefaultUrl($User);
-                     } elseif (!preg_match('`^https?://`i', $Value)) {
+                     } elseif (!IsUrl($Value)) {
                         $Value = Gdn_Upload::Url(ChangeBasename($Value, 'n%s'));
                      }
                   }
@@ -1040,6 +1063,63 @@ class UserModel extends Gdn_Model {
       SaveToConfig('Garden.SystemUserID', $SystemUserID);
       return $SystemUserID;
    }
+   
+   /**
+    * Add points to a user's total.
+    * 
+    * @since 2.1.0
+    * @access public
+    */
+   public static function GivePoints($UserID, $Points, $Source = 'Other', $Timestamp = FALSE) {
+      if (!$Timestamp)
+         $Timestamp = time();
+      
+      // Increment source points for the user.
+      self::_GivePoints($UserID, $Points, 'a', $Source);
+      
+      // Increment total points for the user.
+      self::_GivePoints($UserID, $Points, 'w', 'Total', $Timestamp);
+      self::_GivePoints($UserID, $Points, 'm', 'Total', $Timestamp);
+      self::_GivePoints($UserID, $Points, 'a', 'Total', $Timestamp);
+      
+      // Increment global daily points.
+      self::_GivePoints(0, $Points, 'd', 'Total', $Timestamp);
+      
+      // Grab the user's total points.
+      $Points = Gdn::SQL()->GetWhere('UserPoints', array('UserID' => $UserID, 'SlotType' => 'a', 'Source' => 'Total'))->Value('Points');
+      
+//      Gdn::Controller()->InformMessage('Points: '.$Points);
+      Gdn::UserModel()->SetField($UserID, 'Points', $Points);
+      
+      // Fire a give points event.
+      Gdn::UserModel()->EventArguments['UserID'] = $UserID;
+      Gdn::UserModel()->EventArguments['Points'] = $Points;
+      Gdn::UserModel()->FireEvent('GivePoints');
+   }
+   
+   /**
+    * Add points to a user's total in a specific timeslot.
+    * 
+    * @since 2.1.0
+    * @access protected
+    * @see self::GivePoints
+    */
+   protected static function _GivePoints($UserID, $Points, $SlotType, $Source = 'Total', $Timestamp = FALSE) {
+      $TimeSlot = gmdate('Y-m-d', Gdn_Statistics::TimeSlotStamp($SlotType, $Timestamp));
+      
+      $Px = Gdn::Database()->DatabasePrefix;
+      $Sql = "insert {$Px}UserPoints (UserID, SlotType, TimeSlot, Source, Points)
+         values (:UserID, :SlotType, :TimeSlot, :Source, :Points)
+         on duplicate key update Points = Points + :Points1";
+      
+      Gdn::Database()->Query($Sql, array(
+          ':UserID' => $UserID, 
+          ':Points' => $Points, 
+          ':SlotType' => $SlotType, 
+          ':Source' => $Source,
+          ':TimeSlot' => $TimeSlot, 
+          ':Points1' => $Points));
+   }
 
    public function Register($FormPostValues, $Options = array()) {
       $Valid = TRUE;
@@ -1082,6 +1162,11 @@ class UserModel extends Gdn_Model {
          default:
             $UserID = $this->InsertForBasic($FormPostValues, GetValue('CheckCaptcha', $Options, FALSE), $Options);
             break;
+      }
+      
+      if ($UserID) {
+         $this->EventArguments['UserID'] = $UserID;
+         $this->FireEvent('AfterRegister');
       }
       return $UserID;
    }
@@ -1211,7 +1296,7 @@ class UserModel extends Gdn_Model {
          }
          
          // Check for email confirmation.
-         if (C('Garden.Registration.ConfirmEmail') && !GetValue('NoConfirmEmail', $Settings)) {
+         if (self::RequireConfirmEmail() && !GetValue('NoConfirmEmail', $Settings)) {
             if (isset($Fields['Email']) && $UserID == Gdn::Session()->UserID && $Fields['Email'] != Gdn::Session()->User->Email && !Gdn::Session()->CheckPermission('Garden.Users.Edit')) {
                $User = Gdn::Session()->User;
                $Attributes = Gdn::Session()->User->Attributes;
@@ -1631,6 +1716,10 @@ class UserModel extends Gdn_Model {
 
       return $Data === FALSE ? 0 : $Data->UserCount;
    }
+   
+   public static function SigninLabelCode() {
+      return UserModel::NoEmail() ? 'Username' : 'Email/Username';
+   }
 
    /**
     * To be used for invitation registration
@@ -1968,6 +2057,27 @@ class UserModel extends Gdn_Model {
          }
       }
    }
+   
+   /**
+    * @param unknown_type $FormPostValues
+    * @param unknown_type $Insert
+    * @return unknown
+    * @todo add doc
+    */
+   public function Validate($FormPostValues, $Insert = FALSE) {
+      $this->DefineSchema();
+      
+      if (self::NoEmail()) {
+         // Remove the email requirement.
+         $this->Validation->UnapplyRule('Email', 'Required');
+      }
+      
+      if (!$Insert && !isset($FormPostValues['Name'])) {
+         $this->Validation->UnapplyRule('Name');
+      }
+      
+      return $this->Validation->Validate($FormPostValues, $Insert);
+   }
 
    /**
     * Validate User Credential
@@ -2255,11 +2365,12 @@ class UserModel extends Gdn_Model {
          $Content = NULL;
 
       // Remove photos
-      $PhotoData = $this->SQL->Select()->From('Photo')->Where('InsertUserID', $UserID)->Get();
+      /*$PhotoData = $this->SQL->Select()->From('Photo')->Where('InsertUserID', $UserID)->Get();
       foreach ($PhotoData->Result() as $Photo) {
          @unlink(PATH_UPLOADS.DS.$Photo->Name);
       }
       $this->SQL->Delete('Photo', array('InsertUserID' => $UserID));
+      */
       
       // Remove invitations
       $this->GetDelete('Invitation', array('InsertUserID' => $UserID), $Content);
@@ -2270,6 +2381,12 @@ class UserModel extends Gdn_Model {
       
       // Remove activity comments.
       $this->GetDelete('ActivityComment', array('InsertUserID' => $UserID), $Content);
+      
+      // Clear out information on the user.
+      $this->SetField($UserID, array(
+          'About' => NULL,
+          'Title' => NULL,
+          'Location' => NULL));
       
       if ($Log) {
          $User['_Data'] = $Content;
@@ -2473,7 +2590,7 @@ class UserModel extends Gdn_Model {
       $UserData = $this->GetID($UserID, DATASET_TYPE_OBJECT);
 
       if (!$UserData)
-         throw new Exception(T('ErrorRecordNotFound'));
+         throw new Exception(sprintf('User %s not found.', $UserID));
 
       $Values = GetValue($Column, $UserData);
       
@@ -2573,7 +2690,7 @@ class UserModel extends Gdn_Model {
       if ($v = GetValue('Preferences', $User))
          SetValue('Preferences', $User, @unserialize($v));
       if ($v = GetValue('Photo', $User)) {
-         if (!preg_match('`^https?://`i', $v)) {
+         if (!IsUrl($v)) {
             $PhotoUrl = Gdn_Upload::Url(ChangeBasename($v, 'n%s'));
          } else {
             $PhotoUrl = $v;
@@ -2739,7 +2856,7 @@ class UserModel extends Gdn_Model {
 
       // Add the email confirmation key.
       if ($Data['EmailKey']) {
-         $Message .= "\n\n".FormatString(C('EmailConfirmEmail', self::DEFAULT_CONFIRM_EMAIL), $Data);
+         $Message .= "\n\n".FormatString(T('EmailConfirmEmail', self::DEFAULT_CONFIRM_EMAIL), $Data);
       }
       $Message = $this->_AddEmailHeaderFooter($Message, $Data);
 
@@ -2808,9 +2925,9 @@ class UserModel extends Gdn_Model {
          $UserData['Name'] = $Data['Name'];
          $UserData['Password'] = RandomString(16);
          $UserData['Email'] = ArrayValue('Email', $Data, 'no@email.com');
-         $UserData['Gender'] = strtolower(substr(ArrayValue('Gender', $Attributes, 'u'), 0, 1));
-         $UserData['HourOffset'] = ArrayValue('HourOffset', $Attributes, 0);
-         $UserData['DateOfBirth'] = ArrayValue('DateOfBirth', $Attributes, '');
+         $UserData['Gender'] = strtolower(substr(ArrayValue('Gender', $Data, 'u'), 0, 1));
+         $UserData['HourOffset'] = ArrayValue('HourOffset', $Data, 0);
+         $UserData['DateOfBirth'] = ArrayValue('DateOfBirth', $Data, '');
          $UserData['CountNotifications'] = 0;
          $UserData['Attributes'] = $Attributes;
          $UserData['InsertIPAddress'] = Gdn::Request()->IpAddress();
@@ -2875,11 +2992,12 @@ class UserModel extends Gdn_Model {
    }
    
    public function PasswordRequest($Email) {
-      if (!$Email)
+      if (!$Email) {
          return FALSE;
+      }
 
       $Users = $this->GetWhere(array('Email' => $Email))->ResultObject();
-      if (count($Users) == 0 && C('Garden.Registration.NameUnique', 1)) {
+      if (count($Users) == 0) {
          // Check for the username.
          $Users = $this->GetWhere(array('Name' => $Email))->ResultObject();
       }
@@ -2888,11 +3006,19 @@ class UserModel extends Gdn_Model {
       $this->EventArguments['Email'] = $Email;
       $this->FireEvent('BeforePasswordRequest');
       
-      if (count($Users) == 0)
-            return FALSE;
+      if (count($Users) == 0) {
+         $this->Validation->AddValidationResult('Name', "Couldn't find an account associated with that email/username.");
+         return FALSE;
+      }
 
       $Email = new Gdn_Email();
+      $NoEmail = TRUE;
+      
       foreach ($Users as $User) {
+         if (!$User->Email) {
+            continue;
+         }
+         
          $PasswordResetKey = RandomString(6);
          $this->SaveAttribute($User->UserID, 'PasswordResetKey', $PasswordResetKey);
          $AppTitle = C('Garden.Title');
@@ -2908,6 +3034,12 @@ class UserModel extends Gdn_Model {
             )
          );
          $Email->Send();
+         $NoEmail = FALSE;
+      }
+      
+      if ($NoEmail) {
+         $this->Validation->AddValidationResult('Name', 'There is no email address associated with that account.');
+         return FALSE;
       }
       return TRUE;
    }

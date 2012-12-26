@@ -304,7 +304,7 @@ if (!class_exists('HeadModule', FALSE)) {
          if (method_exists($this->_Sender, 'CanonicalUrl') && !C('Garden.Modules.NoCanonicalUrl', FALSE)) {
             $CanonicalUrl = $this->_Sender->CanonicalUrl();
             
-            if (!preg_match('`^https?://`', $CanonicalUrl))
+            if (!IsUrl($CanonicalUrl))
                $CanonicalUrl = Gdn::Router()->ReverseRoute($CanonicalUrl);
             
             $this->_Sender->CanonicalUrl($CanonicalUrl);
@@ -336,7 +336,7 @@ if (!class_exists('HeadModule', FALSE)) {
 
          // Default to the site logo if there were no images provided by the controller.
          if (count($this->_Sender->Image()) == 0) {
-            $Logo = C('Garden.Logo', '');
+            $Logo = C('Garden.ShareImage', C('Garden.Logo', ''));
             if ($Logo != '') {
                // Fix the logo path.
                if (StringBeginsWith($Logo, 'uploads/'))

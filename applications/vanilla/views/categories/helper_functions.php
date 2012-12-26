@@ -112,9 +112,14 @@ function WriteListItem($Row, $Depth = 1) {
    ?>
    <li id="Category_<?php echo $Row['CategoryID']; ?>" class="<?php echo CssClass($Row); ?>">
       <div class="ItemContent Category">
-         <?php echo GetOptions($Row); ?>
-         
-         <?php echo Wrap(Anchor($Row['Name'], $Row['Url'], 'Title'), $H, array('class' => 'CategoryName TitleWrap')); ?>
+         <?php 
+            echo GetOptions($Row); 
+            echo '<'.$H.' class="CategoryName TitleWrap">';
+            echo Anchor($Row['Name'], $Row['Url'], 'Title');
+            Gdn::Controller()->EventArguments['Category'] = $Row;
+            Gdn::Controller()->FireEvent('AfterCategoryTitle'); 
+            echo '</'.$H.'>';
+         ?>
          
          <div class="CategoryDescription">
             <?php echo $Row['Description']; ?>
@@ -135,19 +140,15 @@ function WriteListItem($Row, $Depth = 1) {
             ?></span>
             
             <span class="MItem MItem-Count DiscussionCount"><?php
-               echo Plural(
-                  $Row['CountDiscussions'],
-                  '%s discussion',
-                  '%s discussions',
-                  Gdn_Format::BigNumber($Row['CountDiscussions'], 'html'));
+               printf(PluralTranslate($Row['CountDiscussions'], 
+                  '%s discussion html', '%s discussions html', '%s discussion', '%s discussions'),
+                  BigPlural($Row['CountDiscussions'], '%s discussion'));
             ?></span>
             
             <span class="MItem MItem-Count CommentCount"><?php
-               echo Plural(
-                  $Row['CountDiscussions'],
-                  '%s comment',
-                  '%s comments',
-                  Gdn_Format::BigNumber($Row['CountComments'], 'html'));
+               printf(PluralTranslate($Row['CountComments'], 
+                  '%s comment html', '%s comments html', '%s comment', '%s comments'),
+                  BigPlural($Row['CountComments'], '%s comment'));
             ?></span>
             
             <span class="MItem LastestPost LastDiscussionTitle"><?php

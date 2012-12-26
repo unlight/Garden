@@ -42,6 +42,49 @@ if (!function_exists('Bullet')):
    }
 endif;
 
+if (!function_exists('ButtonDropDown')):
+   /**
+    *
+    * @param array $Links An array of arrays with the following keys:
+    *  - Text: The text of the link.
+    *  - Url: The url of the link.
+    * @param string|array $CssClass The css class of the link. This can be a two-item array where the second element will be added to the buttons.
+    * @param string $Label The text of the button.
+    * @since 2.1
+    */
+   function ButtonDropDown($Links, $CssClass = 'Button', $Label = FALSE) {
+      if (!is_array($Links) || count($Links) < 1)
+         return;
+      
+      $ButtonClass = '';
+      if (is_array($CssClass))
+         list($CssClass, $ButtonClass) = $CssClass;
+      
+      if (count($Links) < 2) {
+         $Link = array_pop($Links);
+         
+         echo Anchor($Link['Text'], $Link['Url'], $CssClass);
+      } else {
+         // NavButton or Button?
+         $ButtonClass = ConcatSep(' ', $ButtonClass, strpos($CssClass, 'NavButton') !== FALSE ? 'NavButton' : 'Button');
+         if (strpos($CssClass, 'Primary') !== FALSE)
+            $ButtonClass .= ' Primary';
+         // Strip "Button" or "NavButton" off the group class.
+         echo '<div class="ButtonGroup'.str_replace(array('NavButton', 'Button'), array('',''), $CssClass).'">';
+//            echo Anchor($Text, $Url, $ButtonClass);
+            
+            echo '<ul class="Dropdown MenuItems">';
+               foreach ($Links as $Link) {
+                  echo Wrap(Anchor($Link['Text'], $Link['Url'], GetValue('CssClass', $Link, '')), 'li');
+               }
+            echo '</ul>';
+            
+            echo Anchor($Label.' '.Sprite('SpDropdownHandle'), '#', $ButtonClass.' Handle');
+         echo '</div>';
+      }
+   }
+endif;
+
 if (!function_exists('ButtonGroup')):
    /**
     *
@@ -63,7 +106,12 @@ if (!function_exists('ButtonGroup')):
       if (is_array($CssClass))
          list($CssClass, $ButtonClass) = $CssClass;
       
-      if ($Default) {
+      if ($Default && count($Links) > 1) {
+         if (is_array($Default)) {
+            $DefaultText = $Default['Text'];
+            $Default = $Default['Url'];
+         }
+         
          // Find the default button. 
          $Default = ltrim($Default, '/');
          foreach ($Links as $Link) {
@@ -73,6 +121,9 @@ if (!function_exists('ButtonGroup')):
                break;
             }
          }
+         
+         if (isset($DefaultText))
+            $Text = $DefaultText;
       }
       
       if (count($Links) < 2) {
@@ -83,18 +134,52 @@ if (!function_exists('ButtonGroup')):
          if (strpos($CssClass, 'Primary') !== FALSE)
             $ButtonClass .= ' Primary';
          // Strip "Button" or "NavButton" off the group class.
-         echo '<div class="ButtonGroup '.str_replace(array('NavButton', 'Button'), array('',''), $CssClass).'">';
+         echo '<div class="ButtonGroup Multi '.str_replace(array('NavButton', 'Button'), array('',''), $CssClass).'">';
             echo Anchor($Text, $Url, $ButtonClass);
-            echo Anchor(Sprite('SpDropdownHandle'), '#', $ButtonClass.' Handle');
+            
             echo '<ul class="Dropdown MenuItems">';
                foreach ($Links as $Link) {
                   echo Wrap(Anchor($Link['Text'], $Link['Url'], GetValue('CssClass', $Link, '')), 'li');
                }
             echo '</ul>';
+            echo Anchor(Sprite('SpDropdownHandle'), '#', $ButtonClass.' Handle');
+            
          echo '</div>';
       }
    }
-endif; 
+endif;
+
+if (!function_exists('Category')):
+
+/**
+ * Get the current category on the page.
+ * @param int $Depth The level you want to look at.
+ */
+function Category($Depth = NULL) {
+   $Category = Gdn::Controller()->Data('Category');
+   if (!$Category) {
+      $Category = Gdn::Controller()->Data('CategoryID');
+      if ($Category)
+         $Category = CategoryModel::Categories($Category);
+   }
+   if (!$Category)
+      return NULL;
+   
+   $Category = (array)$Category;
+   
+   if ($Depth !== NULL) {
+      // Get the category at the correct level.
+      while ($Category['Depth'] > $Depth) {
+         $Category = CategoryModel::Categories($Category['ParentCategoryID']);
+         if (!$Category)
+            return NULL;
+      }
+   }
+   
+   return $Category;
+}
+   
+endif;
 
 if (!function_exists('CategoryUrl')):
 
@@ -155,30 +240,37 @@ if (!function_exists('CssClass')):
  * @param type $Row
  * @return string The CSS classes to be inserted into the row.
  */
-function CssClass($Row) {
+function CssClass($Row, $InList = TRUE) {
    static $Alt = FALSE;
    $Row = (array)$Row;
    $CssClass = 'Item';
    $Session = Gdn::Session();
 
    // Alt rows
-      if ($Alt)
-         $CssClass .= ' Alt';
-      $Alt = !$Alt;
+   if ($Alt)
+      $CssClass .= ' Alt';
+   $Alt = !$Alt;
       
    // Category list classes
-      if (array_key_exists('UrlCode', $Row))
-         $CssClass .= ' Category-'.Gdn_Format::AlphaNumeric($Row['UrlCode']);
-   
-      if (array_key_exists('Depth', $Row))
-         $CssClass .= " Depth{$Row['Depth']} Depth-{$Row['Depth']}";
+   if (array_key_exists('UrlCode', $Row))
+      $CssClass .= ' Category-'.Gdn_Format::AlphaNumeric($Row['UrlCode']);
+
+   if (array_key_exists('Depth', $Row))
+      $CssClass .= " Depth{$Row['Depth']} Depth-{$Row['Depth']}";
+
+   if (array_key_exists('Archive', $Row))
+      $CssClass .= ' Archived';
       
-      if (array_key_exists('Archive', $Row))
-         $CssClass .= ' Archived';
-      
-   // Discussion list classes
+   // Discussion list classes.
+   if ($InList) {
       $CssClass .= GetValue('Bookmarked', $Row) == '1' ? ' Bookmarked' : '';
-      $CssClass .= GetValue('Announce', $Row) ? ' Announcement' : '';
+
+      $Announce = GetValue('Announce', $Row);
+      if ($Announce == 2)
+         $CssClass .= ' Announcement Announcement-Category';
+      elseif ($Announce)
+         $CssClass .= ' Announcement Announcement-Everywhere';
+
       $CssClass .= GetValue('Closed', $Row) == '1' ? ' Closed' : '';
       $CssClass .= GetValue('InsertUserID', $Row) == $Session->UserID ? ' Mine' : '';
       if (array_key_exists('CountUnreadComments', $Row) && $Session->IsValid()) {
@@ -194,26 +286,27 @@ function CssClass($Row) {
          // Category list
          $CssClass .= $IsRead ? ' Read' : ' Unread';
       }
+   }
          
    // Comment list classes
-      if (array_key_exists('CommentID', $Row))
-          $CssClass .= ' ItemComment';
-      else if (array_key_exists('DiscussionID', $Row))
-          $CssClass .= ' ItemDiscussion';
-      
-      if (function_exists('IsMeAction'))
-         $CssClass .= IsMeAction($Row) ? ' MeAction' : '';
-      
-      if ($_CssClss = GetValue('_CssClass', $Row))
+   if (array_key_exists('CommentID', $Row))
+       $CssClass .= ' ItemComment';
+   else if (array_key_exists('DiscussionID', $Row))
+       $CssClass .= ' ItemDiscussion';
+
+   if (function_exists('IsMeAction'))
+      $CssClass .= IsMeAction($Row) ? ' MeAction' : '';
+
+   if ($_CssClss = GetValue('_CssClass', $Row))
+      $CssClass .= ' '.$_CssClss;
+
+   // Insert User classes.
+   if ($UserID = GetValue('InsertUserID', $Row)) {
+      $User = Gdn::UserModel()->GetID($UserID);
+      if ($_CssClss = GetValue('_CssClass', $User)) {
          $CssClass .= ' '.$_CssClss;
-      
-      // Insert User classes.
-      if ($UserID = GetValue('InsertUserID', $Row)) {
-         $User = Gdn::UserModel()->GetID($UserID);
-         if ($_CssClss = GetValue('_CssClass', $User)) {
-            $CssClass .= ' '.$_CssClss;
-         }
       }
+   }
 
    return trim($CssClass);
 }
@@ -255,6 +348,21 @@ if (!function_exists('Anchor')) {
       return '<a href="'.htmlspecialchars($Destination, ENT_COMPAT, 'UTF-8').'"'.Attribute($CssClass).Attribute($Attributes).'>'.$Text.'</a>';
    }
 }
+
+if (!function_exists('CommentUrl')):
+
+/**
+ * Return a url for a comment. This function is in here and not functions.general so that plugins can override.
+ * @param object $Comment
+ * @return string
+ */
+function CommentUrl($Comment, $WithDomain = TRUE) {
+   $Comment = (object)$Comment;
+   $Result = "/discussion/comment/{$Comment->CommentID}#Comment_{$Comment->CommentID}";
+   return Url($Result, $WithDomain);
+}
+   
+endif;
 
 if (!function_exists('DiscussionUrl')):
 
@@ -427,7 +535,30 @@ if (!function_exists('Plural')) {
       $WorkingNumber = str_replace(',', '', $Number);
       if ($FormattedNumber === FALSE)
          $FormattedNumber = $Number;
-      return sprintf(T(abs($WorkingNumber) == 1 ? $Singular : $Plural), $FormattedNumber);
+      
+      $Format = T(abs($WorkingNumber) == 1 ? $Singular : $Plural);
+      
+      return sprintf($Format, $FormattedNumber);
+   }
+}
+
+if (!function_exists('PluralTranslate')) {
+   /**
+    * Translate a plural string.
+    * 
+    * @param int $Number
+    * @param string $Singular
+    * @param string $Plural
+    * @param string|false $SingularDefault
+    * @param string|false $PluralDefault
+    * @return string
+    * @since 2.1
+    */
+   function PluralTranslate($Number, $Singular, $Plural, $SingularDefault = FALSE, $PluralDefault = FALSE) {
+      if ($Number == 1)
+         return T($Singular, $SingularDefault);
+      else
+         return T($Plural, $PluralDefault);
    }
 }
 
@@ -527,7 +658,7 @@ if (!function_exists('UserPhoto')) {
          $Photo = UserPhotoDefaultUrl($User, $ImgClass);
 
       if ($Photo) {
-         if (!preg_match('`^https?://`i', $Photo)) {
+         if (!isUrl($Photo, '//')) {
             $PhotoUrl = Gdn_Upload::Url(ChangeBasename($Photo, 'n%s'));
          } else {
             $PhotoUrl = $Photo;
@@ -550,7 +681,7 @@ if (!function_exists('UserUrl')) {
     * @param string $Method Optional. ProfileController method to target.
     * @return string The url suitable to be passed into the Url() function.
     */
-   function UserUrl($User, $Px = '', $Method = '') {
+   function UserUrl($User, $Px = '', $Method = '', $Get = FALSE) {
       static $NameUnique = NULL;
       if ($NameUnique === NULL)
          $NameUnique = C('Garden.Registration.NameUnique');
@@ -558,10 +689,15 @@ if (!function_exists('UserUrl')) {
       $UserName = GetValue($Px.'Name', $User);
       $UserName = preg_replace('/([\?&]+)/', '', $UserName);
       
-      return '/profile/'.
+      $Result = '/profile/'.
          ($Method ? trim($Method, '/').'/' : '').
          ($NameUnique ? '' : GetValue($Px.'UserID', $User, 0).'/').
          rawurlencode($UserName);
+      
+      if ($Get)
+         $Result .= '?'.http_build_query($Get);
+      
+      return $Result;
    }
 }
 

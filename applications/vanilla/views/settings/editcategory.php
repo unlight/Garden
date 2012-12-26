@@ -32,6 +32,12 @@ echo $this->Form->Errors();
          echo $this->Form->TextBox('Description', array('MultiLine' => TRUE));
       ?>
    </li>
+   <li>
+      <?php
+         echo $this->Form->Label('Css Class', 'CssClass');
+         echo $this->Form->TextBox('CssClass', array('MultiLine' => FALSE));
+      ?>
+   </li>
    <?php
    echo $this->Form->Simple(
       $this->Data('_ExtendedFields', array()),
@@ -47,6 +53,7 @@ echo $this->Form->Errors();
       echo $this->Form->CheckBox('Archived', 'This category is archived.');
       ?>
    </li>
+   <?php $this->FireEvent('AfterCategorySettings'); ?>
    <li>
       <?php
 		if(count($this->PermissionData) > 0) {
