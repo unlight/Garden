@@ -1,4 +1,4 @@
-<?php if (!defined('APPLICATION')) exit();
+<?php
 
 /**
  * General functions
@@ -12,7 +12,7 @@
  * @since 2.0
  */
 
-include PATH_LIBRARY.'/vendors/wordpress/functions.wordpress.php';
+// include PATH_LIBRARY.'/vendors/wordpress/functions.wordpress.php';
 
 if (!function_exists('AbsoluteSource')) {
    /**
@@ -1436,7 +1436,7 @@ if (!function_exists('GetValueR')) {
       for($i = 0; $i < count($Path); ++$i) {
          $SubKey = $Path[$i];
 
-         if(is_array($Value) && isset($Value[$SubKey])) {
+         if((is_array($Value) || $Value instanceof ArrayAccess) && isset($Value[$SubKey])) {
             $Value = $Value[$SubKey];
          } elseif(is_object($Value) && isset($Value->$SubKey)) {
             $Value = $Value->$SubKey;
