@@ -1,4 +1,8 @@
-<?php if (!defined('APPLICATION')) exit();
+<?php
+
+/**
+ * Modified by S.
+ */
 
 /**
  * Validation functions
@@ -31,6 +35,7 @@ if (!function_exists('ValidateCaptcha')) {
 
 if (!function_exists('ValidateRegex')) {
    function ValidateRegex($Value, $Regex) {
+      if (is_null($Value)) return TRUE;
       preg_match($Regex, $Value, $Matches);
       return is_array($Matches) && count($Matches) > 0 ? TRUE : FALSE;
    }
@@ -125,10 +130,15 @@ if (!function_exists('ValidateOldPassword')) {
 
 if (!function_exists('ValidateEmail')) {
    function ValidateEmail($Value, $Field = '') {
-      if (!ValidateRequired($Value))
-         return TRUE;
+      if (is_null($Value)) return TRUE;
+      // if (!ValidateRequired($Value))
+      //    return TRUE;
       
-      $Result = PHPMailer::ValidateAddress($Value);
+      if (class_exists('PHPMailer')) {
+         $Result = PHPMailer::ValidateAddress($Value);
+      } else {
+         $Result = preg_match('/^(?!(?>(?1)"?(?>\\\[ -~]|[^"])"?(?1)){255,})(?!(?>(?1)"?(?>\\\[ -~]|[^"])"?(?1)){65,}@)((?>(?>(?>((?>(?>(?>\x0D\x0A)?[  ])+|(?>[    ]*\x0D\x0A)?[  ]+)?)(\((?>(?2)(?>[\x01-\x08\x0B\x0C\x0E-\'*-\[\]-\x7F]|\\\[\x00-\x7F]|(?3)))*(?2)\)))+(?2))|(?2))?)([!#-\'*+\/-9=?^-~-]+|"(?>(?2)(?>[\x01-\x08\x0B\x0C\x0E-!#-\[\]-\x7F]|\\\[\x00-\x7F]))*(?2)")(?>(?1)\.(?1)(?4))*(?1)@(?!(?1)[a-z0-9-]{64,})(?1)(?>([a-z0-9](?>[a-z0-9-]*[a-z0-9])?)(?>(?1)\.(?!(?1)[a-z0-9-]{64,})(?1)(?5)){0,126}|\[(?:(?>IPv6:(?>([a-f0-9]{1,4})(?>:(?6)){7}|(?!(?:.*[a-f0-9][:\]]){7,})((?6)(?>:(?6)){0,5})?::(?7)?))|(?>(?>IPv6:(?>(?6)(?>:(?6)){5}:|(?!(?:.*[a-f0-9]:){5,})(?8)?::(?>((?6)(?>:(?6)){0,3}):)?))?(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(?>\.(?9)){3}))\])(?1)$/isD', $Value);
+      }
       $Result = (bool)$Result;
       return $Result;
    }
@@ -136,6 +146,7 @@ if (!function_exists('ValidateEmail')) {
 
 if (!function_exists('ValidateWebAddress')) {
    function ValidateWebAddress($Value, $Field = '') {
+      if (is_null($Value)) return TRUE;
       if ($Value == '')
          return TRUE; // Required picks up this error
       
@@ -170,6 +181,7 @@ if (!function_exists('ValidateUsername')) {
 
 if (!function_exists('ValidateUrlString')) {
    function ValidateUrlString($Value, $Field = '') {
+      if (is_null($Value)) return TRUE;
       return ValidateRegex(
          $Value,
          '/^([\d\w_\-]+)?$/si'
@@ -179,6 +191,7 @@ if (!function_exists('ValidateUrlString')) {
 
 if (!function_exists('ValidateUrlStringRelaxed')) {
    function ValidateUrlStringRelaxed($Value, $Field = '') {
+      if (is_null($Value)) return TRUE;
       if (preg_match('`[/\\\<>\'"]`', $Value))
          return FALSE;
       return TRUE;
@@ -231,8 +244,9 @@ if (!function_exists('ValidateMinimumAge')) {
 
 if (!function_exists('ValidateInteger')) {
    function ValidateInteger($Value, $Field = NULL) {
-      if (!$Value || (is_string($Value) && !trim($Value)))
-         return TRUE;
+      if (is_null($Value)) return TRUE;
+      // if (!$Value || (is_string($Value) && !trim($Value)))
+      //    return TRUE;
 
       $Integer = intval($Value);
       $String = strval($Integer);
@@ -241,21 +255,22 @@ if (!function_exists('ValidateInteger')) {
 }
 
 if (!function_exists('ValidateBoolean')) {
-   function ValidateBoolean($Value, $Field) {
+   function ValidateBoolean($Value, $Field = NULL) {
       $String = strval($Value);
       return in_array($String, array('1', '0', 'TRUE', 'FALSE', '')) ? TRUE : FALSE;
    }
 }
 
 if (!function_exists('ValidateDecimal')) {
-   function ValidateDecimal($Value, $Field) {
-       if (is_object($Field) && $Field->AllowNull && $Value === NULL) return TRUE;
-       return is_numeric($Value);
+   function ValidateDecimal($Value, $Field = NULL) {
+      if (is_null($Value)) return TRUE;
+      // if (is_object($Field) && $Field->AllowNull && $Value === NULL) return TRUE;
+      return is_numeric($Value);
    }
 }
 
 if (!function_exists('ValidateTime')) {
-   function ValidateTime($Value, $Field) {
+   function ValidateTime($Value, $Field = NULL) {
       // TODO: VALIDATE AS HH:MM:SS OR HH:MM
       return FALSE;
    }
@@ -351,8 +366,7 @@ if (!function_exists('ValidateVersion')) {
  */
 if (!function_exists('ValidatePhoneNA')) {
    function ValidatePhoneNA($Value, $Field = '') {
-      if ($Value == '')
-         return true; // Do not require by default.
+      if (is_null($Value)) return TRUE;
       $Valid = ValidateRegex($Value, '/^(?:\+?1[-. ]?)?\(?([0-9]{3})\)?[-. ]?([0-9]{3})[-. ]?([0-9]{4})$/');
       return ($Valid) ? $Valid : T('ValidatePhone', 'Phone number is invalid.');
    }
@@ -363,8 +377,7 @@ if (!function_exists('ValidatePhoneNA')) {
  */
 if (!function_exists('ValidatePhoneInt')) {
    function ValidatePhoneInt($Value, $Field = '') {
-      if ($Value == '')
-         return true; // Do not require by default.
+      if (is_null($Value)) return TRUE;
       $Valid = ValidateRegex($Value, '/^\+(?:[0-9] ?){6,14}[0-9]$/');
       return ($Valid) ? $Valid : T('ValidatePhone', 'Phone number is invalid.');
    }
@@ -375,8 +388,7 @@ if (!function_exists('ValidatePhoneInt')) {
  */
 if (!function_exists('ValidateZipCode')) {
    function ValidateZipCode($Value, $Field = '') {
-      if ($Value == '')
-         return true; // Do not require by default.
+      if (is_null($Value)) return TRUE;
       $Valid = ValidateRegex($Value, '/^([0-9]{5})(-[0-9]{4})?$/');
       return ($Valid) ? $Valid : T('ValidateZipCode', 'Zip code is invalid.');
    }
